@@ -1,6 +1,8 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,72 +12,155 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { AppButton } from "@/components/ui/AppButton";
+import { theme } from "@/theme/tokens";
+
+const { colors, spacing, radius } = theme;
+
 export default function LoginScreen() {
   const router = useRouter();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
   function handleLogin() {
+    setError("");
+    setMessage("");
+
     if (!email.trim() || !password) {
-      setMessage("Please fill in all fields.");
+      setError("Please fill in all fields.");
       return;
     }
 
-    setMessage("Login backend will be connected next.");
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailPattern.test(email.trim())) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+
+    setMessage("Login design is ready. Authentication will be connected next.");
   }
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backText}>← Back</Text>
-        </Pressable>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.content}>
+            {/* Back Navigation */}
+            <Pressable
+              onPress={() => router.replace("/")}
+              style={styles.backButton}
+              accessibilityRole="button"
+              accessibilityLabel="Back to welcome"
+            >
+              <Text style={styles.backText}>← Back to welcome</Text>
+            </Pressable>
 
-        <Text style={styles.logo}>♥ Rishta App</Text>
+            {/* Branding */}
+            <View style={styles.header}>
+              <View style={styles.logoBox}>
+                <Text style={styles.logoHeart}>♥</Text>
+              </View>
 
-        <Text style={styles.heading}>Welcome Back!</Text>
+              <Text style={styles.title}>Welcome back</Text>
 
-        <Text style={styles.description}>
-          Sign in to continue your journey towards finding your life partner.
-        </Text>
+              <Text style={styles.subtitle}>
+                Your journey to a meaningful connection continues here.
+              </Text>
+            </View>
 
-        <View style={styles.form}>
-          <Text style={styles.label}>Email Address</Text>
+            {/* Login Form */}
+            <View style={styles.form}>
+              <Text style={styles.label}>Email address</Text>
 
-          <TextInput
-            style={styles.input}
-            placeholder="Enter your email"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoComplete="email"
-            value={email}
-            onChangeText={setEmail}
-          />
+              <TextInput
+                style={styles.input}
+                placeholder="you@example.com"
+                placeholderTextColor={colors.textSecondary}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="email"
+                value={email}
+                onChangeText={setEmail}
+                accessibilityLabel="Email address"
+              />
 
-          <Text style={styles.label}>Password</Text>
+              <Text style={styles.label}>Password</Text>
 
-          <TextInput
-            style={styles.input}
-            placeholder="Enter your password"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  style={styles.passwordInput}
+                  placeholder="Enter your password"
+                  placeholderTextColor={colors.textSecondary}
+                  secureTextEntry={!showPassword}
+                  autoComplete="current-password"
+                  value={password}
+                  onChangeText={setPassword}
+                  accessibilityLabel="Password"
+                />
 
-          <Pressable style={styles.loginButton} onPress={handleLogin}>
-            <Text style={styles.loginText}>Login</Text>
-          </Pressable>
+                <Pressable
+                  style={styles.showButton}
+                  onPress={() => setShowPassword(!showPassword)}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    showPassword ? "Hide password" : "Show password"
+                  }
+                >
+                  <Text style={styles.showText}>
+                    {showPassword ? "Hide" : "Show"}
+                  </Text>
+                </Pressable>
+              </View>
 
-          {message ? <Text style={styles.message}>{message}</Text> : null}
-        </View>
+              <Text style={styles.forgotText}>Forgot password?</Text>
 
-        <Text style={styles.footer}>New to Rishta App? Create an account</Text>
-      </ScrollView>
+              {error ? (
+                <Text style={styles.error} accessibilityRole="alert">
+                  {error}
+                </Text>
+              ) : null}
+
+              {message ? <Text style={styles.message}>{message}</Text> : null}
+
+              <View style={styles.loginAction}>
+                <AppButton title="Sign In" onPress={handleLogin} />
+              </View>
+            </View>
+
+            {/* Signup Navigation */}
+            <Pressable
+              onPress={() => router.push("/signup")}
+              style={styles.signupLink}
+              accessibilityRole="button"
+              accessibilityLabel="Create an account"
+            >
+              <Text style={styles.signupText}>
+                New to Rishta App?{" "}
+                <Text style={styles.signupHighlight}>Create an account</Text>
+              </Text>
+            </Pressable>
+
+            {/* Privacy Note */}
+            <View style={styles.footer}>
+              <Text style={styles.footerIcon}>♡</Text>
+              <Text style={styles.footerText}>Your privacy matters to us</Text>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -83,78 +168,179 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFF8F9",
+    backgroundColor: colors.background,
   },
-  content: {
+
+  keyboardView: {
+    flex: 1,
+  },
+
+  scrollContent: {
     flexGrow: 1,
+    alignItems: "center",
     justifyContent: "center",
-    padding: 24,
-    maxWidth: 460,
+    padding: spacing.xl,
+  },
+
+  content: {
     width: "100%",
-    alignSelf: "center",
+    maxWidth: 440,
   },
+
   backButton: {
-    marginBottom: 35,
+    alignSelf: "flex-start",
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.xxxl,
   },
+
   backText: {
-    color: "#BE185D",
-    fontSize: 16,
-  },
-  logo: {
-    color: "#BE185D",
-    fontSize: 24,
-    fontWeight: "bold",
-    textAlign: "center",
-    marginBottom: 40,
-  },
-  heading: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#831843",
-    marginBottom: 12,
-  },
-  description: {
-    fontSize: 16,
-    color: "#6B7280",
-    lineHeight: 24,
-    marginBottom: 35,
-  },
-  form: {
-    gap: 12,
-  },
-  label: {
+    color: colors.primary,
     fontSize: 14,
     fontWeight: "600",
-    color: "#374151",
   },
-  input: {
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-  },
-  loginButton: {
-    backgroundColor: "#BE185D",
-    padding: 18,
-    borderRadius: 12,
+
+  header: {
     alignItems: "center",
-    marginTop: 20,
+    marginBottom: spacing.xxxl,
   },
-  loginText: {
-    color: "#FFFFFF",
+
+  logoBox: {
+    width: 72,
+    height: 72,
+    borderRadius: radius.xl,
+    backgroundColor: colors.surfaceSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: spacing.xl,
+  },
+
+  logoHeart: {
+    color: colors.primary,
+    fontSize: 42,
+  },
+
+  title: {
+    color: colors.heading,
+    fontSize: 32,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: spacing.md,
+  },
+
+  subtitle: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 25,
+    textAlign: "center",
+    maxWidth: 300,
+  },
+
+  form: {
+    gap: spacing.md,
+  },
+
+  label: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  input: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.lg,
+    minHeight: 54,
     fontSize: 16,
-    fontWeight: "bold",
+    color: colors.text,
   },
+
+  passwordContainer: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 54,
+  },
+
+  passwordInput: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    fontSize: 16,
+    color: colors.text,
+  },
+
+  showButton: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+
+  showText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+
+  forgotText: {
+    alignSelf: "flex-end",
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: "600",
+    marginTop: spacing.xs,
+  },
+
+  loginAction: {
+    marginTop: spacing.lg,
+  },
+
+  error: {
+    color: colors.error,
+    fontSize: 13,
+  },
+
   message: {
-    color: "#BE185D",
-    textAlign: "center",
-    marginTop: 12,
+    color: colors.success,
+    fontSize: 13,
+    lineHeight: 20,
   },
-  footer: {
-    marginTop: 35,
+
+  signupLink: {
+    marginTop: spacing.xxl,
+    alignItems: "center",
+    paddingVertical: spacing.sm,
+  },
+
+  signupText: {
+    color: colors.textSecondary,
+    fontSize: 14,
     textAlign: "center",
-    color: "#6B7280",
+  },
+
+  signupHighlight: {
+    color: colors.primary,
+    fontWeight: "700",
+  },
+
+  footer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    marginTop: spacing.xxxl,
+  },
+
+  footerIcon: {
+    color: colors.success,
+    fontSize: 18,
+  },
+
+  footerText: {
+    color: colors.textSecondary,
+    fontSize: 12,
   },
 });

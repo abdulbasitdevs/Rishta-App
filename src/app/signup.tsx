@@ -1,6 +1,8 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,6 +12,11 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { AppButton } from "@/components/ui/AppButton";
+import { theme } from "@/theme/tokens";
+
+const { colors, spacing, radius } = theme;
+
 export default function SignupScreen() {
   const router = useRouter();
 
@@ -17,122 +24,197 @@ export default function SignupScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isAdult, setIsAdult] = useState(false);
+  const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
   function handleSignup() {
+    setError("");
+    setMessage("");
+
     if (!name.trim() || !email.trim() || !password || !confirmPassword) {
-      setMessage("Please fill in all fields.");
+      setError("Please fill in all fields.");
       return;
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      setMessage("Please enter a valid email address.");
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailPattern.test(email.trim())) {
+      setError("Please enter a valid email address.");
       return;
     }
 
     if (password.length < 8) {
-      setMessage("Password must be at least 8 characters.");
+      setError("Password must be at least 8 characters.");
       return;
     }
 
     if (password !== confirmPassword) {
-      setMessage("Passwords do not match.");
+      setError("Passwords do not match.");
       return;
     }
 
     if (!isAdult) {
-      setMessage("You must confirm that you are 18 or older.");
+      setError("You must confirm that you are 18 or older.");
       return;
     }
 
-    setMessage("Signup form is ready! Backend will be added next.");
+    setMessage(
+      "Form validation successful. Account creation will be connected next.",
+    );
   }
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Pressable onPress={() => router.back()}>
-          <Text style={styles.back}>← Back</Text>
-        </Pressable>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.content}>
+            {/* Back navigation */}
+            <Pressable
+              onPress={() => router.replace("/")}
+              style={styles.backButton}
+              accessibilityRole="button"
+            >
+              <Text style={styles.backText}>← Back to welcome</Text>
+            </Pressable>
 
-        <Text style={styles.logo}>♥ Rishta App</Text>
+            {/* Header */}
+            <View style={styles.header}>
+              <View style={styles.logoBox}>
+                <Text style={styles.logoHeart}>♥</Text>
+              </View>
 
-        <Text style={styles.heading}>Create Your Account</Text>
+              <Text style={styles.title}>Begin your journey</Text>
 
-        <Text style={styles.description}>
-          Start your journey towards a meaningful marriage.
-        </Text>
-
-        <View style={styles.form}>
-          <Text style={styles.label}>Full Name</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter your full name"
-            value={name}
-            onChangeText={setName}
-            autoComplete="name"
-          />
-
-          <Text style={styles.label}>Email Address</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter your email"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoComplete="email"
-            value={email}
-            onChangeText={setEmail}
-          />
-
-          <Text style={styles.label}>Password</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Minimum 8 characters"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
-
-          <Text style={styles.label}>Confirm Password</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Confirm your password"
-            secureTextEntry
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-          />
-
-          <Pressable
-            style={styles.checkboxRow}
-            onPress={() => setIsAdult(!isAdult)}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: isAdult }}
-          >
-            <View style={[styles.checkbox, isAdult && styles.checkboxChecked]}>
-              {isAdult && <Text style={styles.checkmark}>✓</Text>}
+              <Text style={styles.subtitle}>
+                Create your account and take the first step towards a meaningful
+                connection.
+              </Text>
             </View>
-            <Text style={styles.checkboxText}>
-              I confirm that I am 18 years or older.
+
+            {/* Registration form */}
+            <View style={styles.form}>
+              <Text style={styles.label}>Full name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Your full name"
+                placeholderTextColor={colors.textSecondary}
+                value={name}
+                onChangeText={setName}
+                autoComplete="name"
+                accessibilityLabel="Full name"
+              />
+
+              <Text style={styles.label}>Email address</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="you@example.com"
+                placeholderTextColor={colors.textSecondary}
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="email"
+                accessibilityLabel="Email address"
+              />
+
+              <Text style={styles.label}>Password</Text>
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  style={styles.passwordInput}
+                  placeholder="At least 8 characters"
+                  placeholderTextColor={colors.textSecondary}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  autoComplete="new-password"
+                  accessibilityLabel="Password"
+                />
+
+                <Pressable
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.showButton}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    showPassword ? "Hide password" : "Show password"
+                  }
+                >
+                  <Text style={styles.showText}>
+                    {showPassword ? "Hide" : "Show"}
+                  </Text>
+                </Pressable>
+              </View>
+
+              <Text style={styles.label}>Confirm password</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Re-enter your password"
+                placeholderTextColor={colors.textSecondary}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry={!showPassword}
+                autoComplete="new-password"
+                accessibilityLabel="Confirm password"
+              />
+
+              {/* Age confirmation */}
+              <Pressable
+                style={styles.checkboxRow}
+                onPress={() => setIsAdult(!isAdult)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: isAdult }}
+              >
+                <View
+                  style={[styles.checkbox, isAdult && styles.checkboxChecked]}
+                >
+                  {isAdult && <Text style={styles.checkmark}>✓</Text>}
+                </View>
+
+                <Text style={styles.checkboxText}>
+                  I confirm that I am 18 years or older.
+                </Text>
+              </Pressable>
+
+              {error ? (
+                <Text style={styles.error} accessibilityRole="alert">
+                  {error}
+                </Text>
+              ) : null}
+
+              {message ? <Text style={styles.message}>{message}</Text> : null}
+
+              <View style={styles.buttonContainer}>
+                <AppButton title="Create My Account" onPress={handleSignup} />
+              </View>
+            </View>
+
+            {/* Login navigation */}
+            <Pressable
+              onPress={() => router.push("/login")}
+              style={styles.loginLink}
+              accessibilityRole="button"
+            >
+              <Text style={styles.loginText}>
+                Already have an account?{" "}
+                <Text style={styles.loginHighlight}>Sign In</Text>
+              </Text>
+            </Pressable>
+
+            <Text style={styles.footer}>
+              A thoughtful beginning to your forever.
             </Text>
-          </Pressable>
-
-          <Pressable style={styles.button} onPress={handleSignup}>
-            <Text style={styles.buttonText}>Create Account</Text>
-          </Pressable>
-
-          {message ? <Text style={styles.message}>{message}</Text> : null}
-        </View>
-
-        <Pressable onPress={() => router.push("/login")}>
-          <Text style={styles.footer}>
-            Already have an account? <Text style={styles.link}>Login</Text>
-          </Text>
-        </Pressable>
-      </ScrollView>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -140,108 +222,167 @@ export default function SignupScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFF8F9",
+    backgroundColor: colors.background,
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    alignItems: "center",
+    padding: spacing.xl,
   },
   content: {
-    flexGrow: 1,
     width: "100%",
-    maxWidth: 460,
-    alignSelf: "center",
-    padding: 24,
-    justifyContent: "center",
+    maxWidth: 440,
   },
-  back: {
-    fontSize: 16,
-    color: "#BE185D",
-    marginBottom: 24,
+  backButton: {
+    alignSelf: "flex-start",
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.xxl,
   },
-  logo: {
-    fontSize: 25,
-    fontWeight: "bold",
-    textAlign: "center",
-    color: "#BE185D",
-    marginBottom: 35,
-  },
-  heading: {
-    fontSize: 30,
-    fontWeight: "bold",
-    color: "#831843",
-    marginBottom: 12,
-  },
-  description: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: "#6B7280",
-    marginBottom: 30,
-  },
-  form: {
-    gap: 12,
-  },
-  label: {
+  backText: {
+    color: colors.primary,
     fontSize: 14,
     fontWeight: "600",
-    color: "#374151",
+  },
+  header: {
+    alignItems: "center",
+    marginBottom: spacing.xxl,
+  },
+  logoBox: {
+    width: 68,
+    height: 68,
+    backgroundColor: colors.surfaceSoft,
+    borderRadius: radius.xl,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: spacing.xl,
+  },
+  logoHeart: {
+    color: colors.primary,
+    fontSize: 40,
+  },
+  title: {
+    color: colors.heading,
+    fontSize: 30,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: spacing.md,
+  },
+  subtitle: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 24,
+    textAlign: "center",
+    maxWidth: 330,
+  },
+  form: {
+    gap: spacing.md,
+  },
+  label: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
   },
   input: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 12,
-    padding: 16,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    minHeight: 54,
+    paddingHorizontal: spacing.lg,
     fontSize: 16,
+    color: colors.text,
+  },
+  passwordContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    minHeight: 54,
+  },
+  passwordInput: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    fontSize: 16,
+    color: colors.text,
+  },
+  showButton: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  showText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "600",
   },
   checkboxRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    marginTop: 8,
+    gap: spacing.md,
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
   },
   checkbox: {
-    width: 22,
-    height: 22,
+    width: 23,
+    height: 23,
+    borderRadius: 6,
     borderWidth: 1.5,
-    borderColor: "#BE185D",
-    borderRadius: 5,
+    borderColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
   },
   checkboxChecked: {
-    backgroundColor: "#BE185D",
+    backgroundColor: colors.primary,
   },
   checkmark: {
-    color: "#FFFFFF",
-    fontWeight: "bold",
+    color: colors.white,
+    fontWeight: "800",
+    fontSize: 15,
   },
   checkboxText: {
-    fontSize: 14,
-    color: "#374151",
     flex: 1,
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 21,
   },
-  button: {
-    backgroundColor: "#BE185D",
-    padding: 18,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 18,
-  },
-  buttonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "bold",
+  error: {
+    color: colors.error,
+    fontSize: 13,
+    lineHeight: 20,
   },
   message: {
-    color: "#BE185D",
+    color: colors.success,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  buttonContainer: {
+    marginTop: spacing.lg,
+  },
+  loginLink: {
+    alignItems: "center",
+    paddingVertical: spacing.md,
+    marginTop: spacing.xl,
+  },
+  loginText: {
+    color: colors.textSecondary,
+    fontSize: 14,
     textAlign: "center",
-    marginTop: 8,
+  },
+  loginHighlight: {
+    color: colors.primary,
+    fontWeight: "700",
   },
   footer: {
+    color: colors.textSecondary,
+    fontSize: 12,
     textAlign: "center",
-    color: "#6B7280",
-    marginTop: 30,
-    fontSize: 14,
-  },
-  link: {
-    color: "#BE185D",
-    fontWeight: "bold",
+    marginTop: spacing.xl,
+    marginBottom: spacing.xl,
   },
 });

@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppButton } from "@/components/ui/AppButton";
+import { supabase } from "@/lib/supabase";
 import { theme } from "@/theme/tokens";
 
 const { colors, spacing, radius } = theme;
@@ -25,24 +26,74 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  function handleLogin() {
+  async function handleLogin() {
+    if (isSubmitting) return;
+
     setError("");
     setMessage("");
 
-    if (!email.trim() || !password) {
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Validate required fields.
+    if (!cleanEmail || !password) {
       setError("Please fill in all fields.");
       return;
     }
 
+    // Validate email address.
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-    if (!emailPattern.test(email.trim())) {
+    if (!emailPattern.test(cleanEmail)) {
       setError("Please enter a valid email address.");
       return;
     }
 
-    setMessage("Login design is ready. Authentication will be connected next.");
+    setIsSubmitting(true);
+
+    try {
+      // Sign in using Supabase Authentication.
+      const { data, error: loginError } =
+        await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password,
+        });
+
+      if (loginError) {
+        if (loginError.code === "email_not_confirmed") {
+          setError("Please verify your email address before signing in.");
+        } else if (loginError.code === "invalid_credentials") {
+          setError("Invalid email or password.");
+        } else {
+          setError(
+            loginError.message || "Unable to sign in. Please try again.",
+          );
+        }
+
+        return;
+      }
+
+      // Verify that an authenticated session exists.
+      if (!data.session || !data.user) {
+        setError("Unable to establish a login session. Please try again.");
+        return;
+      }
+
+      // Clear the password after a successful login.
+      setPassword("");
+      setShowPassword(false);
+
+      // We will add protected dashboard navigation next.
+
+      router.replace("/dashboard");
+    } catch {
+      setError(
+        "Unable to connect right now. Please check your internet connection and try again.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -95,6 +146,7 @@ export default function LoginScreen() {
                 value={email}
                 onChangeText={setEmail}
                 accessibilityLabel="Email address"
+                editable={!isSubmitting}
               />
 
               <Text style={styles.label}>Password</Text>
@@ -109,6 +161,10 @@ export default function LoginScreen() {
                   value={password}
                   onChangeText={setPassword}
                   accessibilityLabel="Password"
+                  editable={!isSubmitting}
+                  onSubmitEditing={() => {
+                    void handleLogin();
+                  }}
                 />
 
                 <Pressable
@@ -125,18 +181,38 @@ export default function LoginScreen() {
                 </Pressable>
               </View>
 
-              <Text style={styles.forgotText}>Forgot password?</Text>
+              {/* Password reset will be implemented next */}
 
+              <Pressable
+                onPress={() => router.push("/forgot-password")}
+                hitSlop={12}
+                accessibilityRole="button"
+              >
+                <Text style={styles.forgotText}>Forgot password?</Text>
+              </Pressable>
+
+              {/* Error Message */}
               {error ? (
                 <Text style={styles.error} accessibilityRole="alert">
                   {error}
                 </Text>
               ) : null}
 
-              {message ? <Text style={styles.message}>{message}</Text> : null}
+              {/* Success Message */}
+              {message ? (
+                <Text style={styles.message} accessibilityRole="alert">
+                  {message}
+                </Text>
+              ) : null}
 
+              {/* Login Button */}
               <View style={styles.loginAction}>
-                <AppButton title="Sign In" onPress={handleLogin} />
+                <AppButton
+                  title="Sign In"
+                  onPress={handleLogin}
+                  loading={isSubmitting}
+                  disabled={isSubmitting}
+                />
               </View>
             </View>
 

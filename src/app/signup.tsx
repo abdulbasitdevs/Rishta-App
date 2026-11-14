@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppButton } from "@/components/ui/AppButton";
+import { supabase } from "@/lib/supabase";
 import { theme } from "@/theme/tokens";
 
 const { colors, spacing, radius } = theme;
@@ -26,25 +27,35 @@ export default function SignupScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isAdult, setIsAdult] = useState(false);
+
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  function handleSignup() {
+  async function handleSignup() {
+    if (isSubmitting) return;
+
     setError("");
     setMessage("");
 
-    if (!name.trim() || !email.trim() || !password || !confirmPassword) {
+    const cleanName = name.trim();
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Validate required fields.
+    if (!cleanName || !cleanEmail || !password || !confirmPassword) {
       setError("Please fill in all fields.");
       return;
     }
 
+    // Validate email address.
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-    if (!emailPattern.test(email.trim())) {
+    if (!emailPattern.test(cleanEmail)) {
       setError("Please enter a valid email address.");
       return;
     }
 
+    // Validate password.
     if (password.length < 8) {
       setError("Password must be at least 8 characters.");
       return;
@@ -55,14 +66,58 @@ export default function SignupScreen() {
       return;
     }
 
+    // Confirm minimum age.
     if (!isAdult) {
       setError("You must confirm that you are 18 or older.");
       return;
     }
 
-    setMessage(
-      "Form validation successful. Account creation will be connected next.",
-    );
+    setIsSubmitting(true);
+
+    try {
+      // For Expo Web, use our login page after email confirmation.
+      // This URL must be allowed in Supabase URL Configuration.
+      const emailRedirectTo =
+        Platform.OS === "web" && typeof window !== "undefined"
+          ? `${window.location.origin}/login`
+          : undefined;
+
+      // Create a real user with Supabase Authentication.
+      const { data, error: signupError } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password,
+        options: {
+          data: {
+            full_name: cleanName,
+          },
+          ...(emailRedirectTo ? { emailRedirectTo } : {}),
+        },
+      });
+
+      if (signupError) {
+        setError(signupError.message);
+        return;
+      }
+
+      // Clear password fields after successful submission.
+      setPassword("");
+      setConfirmPassword("");
+
+      if (data.session) {
+        // This can happen when email confirmation is disabled.
+        setMessage("Your account has been created successfully.");
+      } else {
+        // With email confirmation enabled, a session is
+        // normally not created until email verification.
+        setMessage(
+          "If this email is eligible, a verification email will be sent. Please check your inbox and spam folder.",
+        );
+      }
+    } catch {
+      setError("Unable to create your account right now. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -103,6 +158,7 @@ export default function SignupScreen() {
             {/* Registration form */}
             <View style={styles.form}>
               <Text style={styles.label}>Full name</Text>
+
               <TextInput
                 style={styles.input}
                 placeholder="Your full name"
@@ -111,9 +167,11 @@ export default function SignupScreen() {
                 onChangeText={setName}
                 autoComplete="name"
                 accessibilityLabel="Full name"
+                editable={!isSubmitting}
               />
 
               <Text style={styles.label}>Email address</Text>
+
               <TextInput
                 style={styles.input}
                 placeholder="you@example.com"
@@ -125,9 +183,11 @@ export default function SignupScreen() {
                 autoCorrect={false}
                 autoComplete="email"
                 accessibilityLabel="Email address"
+                editable={!isSubmitting}
               />
 
               <Text style={styles.label}>Password</Text>
+
               <View style={styles.passwordContainer}>
                 <TextInput
                   style={styles.passwordInput}
@@ -138,6 +198,7 @@ export default function SignupScreen() {
                   secureTextEntry={!showPassword}
                   autoComplete="new-password"
                   accessibilityLabel="Password"
+                  editable={!isSubmitting}
                 />
 
                 <Pressable
@@ -155,6 +216,7 @@ export default function SignupScreen() {
               </View>
 
               <Text style={styles.label}>Confirm password</Text>
+
               <TextInput
                 style={styles.input}
                 placeholder="Re-enter your password"
@@ -164,14 +226,20 @@ export default function SignupScreen() {
                 secureTextEntry={!showPassword}
                 autoComplete="new-password"
                 accessibilityLabel="Confirm password"
+                editable={!isSubmitting}
               />
 
               {/* Age confirmation */}
               <Pressable
                 style={styles.checkboxRow}
-                onPress={() => setIsAdult(!isAdult)}
+                onPress={() => {
+                  if (!isSubmitting) {
+                    setIsAdult(!isAdult);
+                  }
+                }}
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: isAdult }}
+                disabled={isSubmitting}
               >
                 <View
                   style={[styles.checkbox, isAdult && styles.checkboxChecked]}
@@ -184,16 +252,24 @@ export default function SignupScreen() {
                 </Text>
               </Pressable>
 
+              {/* Error message */}
               {error ? (
                 <Text style={styles.error} accessibilityRole="alert">
                   {error}
                 </Text>
               ) : null}
 
+              {/* Success message */}
               {message ? <Text style={styles.message}>{message}</Text> : null}
 
+              {/* Signup button */}
               <View style={styles.buttonContainer}>
-                <AppButton title="Create My Account" onPress={handleSignup} />
+                <AppButton
+                  title="Create My Account"
+                  onPress={handleSignup}
+                  loading={isSubmitting}
+                  disabled={isSubmitting}
+                />
               </View>
             </View>
 
@@ -224,32 +300,39 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+
   keyboardView: {
     flex: 1,
   },
+
   scrollContent: {
     flexGrow: 1,
     alignItems: "center",
     padding: spacing.xl,
   },
+
   content: {
     width: "100%",
     maxWidth: 440,
   },
+
   backButton: {
     alignSelf: "flex-start",
     paddingVertical: spacing.sm,
     marginBottom: spacing.xxl,
   },
+
   backText: {
     color: colors.primary,
     fontSize: 14,
     fontWeight: "600",
   },
+
   header: {
     alignItems: "center",
     marginBottom: spacing.xxl,
   },
+
   logoBox: {
     width: 68,
     height: 68,
@@ -259,10 +342,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: spacing.xl,
   },
+
   logoHeart: {
     color: colors.primary,
     fontSize: 40,
   },
+
   title: {
     color: colors.heading,
     fontSize: 30,
@@ -270,6 +355,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: spacing.md,
   },
+
   subtitle: {
     color: colors.textSecondary,
     fontSize: 15,
@@ -277,14 +363,17 @@ const styles = StyleSheet.create({
     textAlign: "center",
     maxWidth: 330,
   },
+
   form: {
     gap: spacing.md,
   },
+
   label: {
     color: colors.text,
     fontSize: 14,
     fontWeight: "600",
   },
+
   input: {
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -295,6 +384,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.text,
   },
+
   passwordContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -304,6 +394,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     minHeight: 54,
   },
+
   passwordInput: {
     flex: 1,
     minWidth: 0,
@@ -312,15 +403,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.text,
   },
+
   showButton: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
+
   showText: {
     color: colors.primary,
     fontSize: 13,
     fontWeight: "600",
   },
+
   checkboxRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -328,6 +422,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     paddingVertical: spacing.sm,
   },
+
   checkbox: {
     width: 23,
     height: 23,
@@ -337,47 +432,57 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   checkboxChecked: {
     backgroundColor: colors.primary,
   },
+
   checkmark: {
     color: colors.white,
     fontWeight: "800",
     fontSize: 15,
   },
+
   checkboxText: {
     flex: 1,
     color: colors.text,
     fontSize: 14,
     lineHeight: 21,
   },
+
   error: {
     color: colors.error,
     fontSize: 13,
     lineHeight: 20,
   },
+
   message: {
     color: colors.success,
     fontSize: 13,
     lineHeight: 20,
   },
+
   buttonContainer: {
     marginTop: spacing.lg,
   },
+
   loginLink: {
     alignItems: "center",
     paddingVertical: spacing.md,
     marginTop: spacing.xl,
   },
+
   loginText: {
     color: colors.textSecondary,
     fontSize: 14,
     textAlign: "center",
   },
+
   loginHighlight: {
     color: colors.primary,
     fontWeight: "700",
   },
+
   footer: {
     color: colors.textSecondary,
     fontSize: 12,

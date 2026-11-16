@@ -1,14 +1,17 @@
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
+
 import {
   ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
 } from "react-native";
+
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppButton } from "@/components/ui/AppButton";
@@ -23,6 +26,8 @@ type BasicProfile = {
   education_level: string | null;
   profession: string | null;
   profile_step: number;
+  faith_category: string | null;
+  muslim_sect: string | null;
 };
 
 export default function DiscoverySettingsScreen() {
@@ -31,6 +36,9 @@ export default function DiscoverySettingsScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+
+  const [shareReligion, setShareReligion] = useState(false);
+  const [shareSect, setShareSect] = useState(false);
 
   const [profile, setProfile] = useState<BasicProfile | null>(null);
   const [displayName, setDisplayName] = useState("");
@@ -54,9 +62,11 @@ export default function DiscoverySettingsScreen() {
 
         const { data: basic, error: basicError } = await supabase
           .from("rishta_profiles")
+
           .select(
-            "full_name, gender, education_level, profession, profile_step",
+            "full_name, gender, education_level, profession, profile_step, faith_category, muslim_sect",
           )
+
           .eq("user_id", data.user.id)
           .maybeSingle();
 
@@ -81,7 +91,9 @@ export default function DiscoverySettingsScreen() {
 
         const { data: discovery, error: discoveryError } = await supabase
           .from("rishta_discovery_profiles")
-          .select("display_name, is_visible")
+
+          .select("display_name, is_visible, faith_category, muslim_sect")
+
           .eq("user_id", data.user.id)
           .maybeSingle();
 
@@ -95,6 +107,9 @@ export default function DiscoverySettingsScreen() {
         if (discovery) {
           setDisplayName(discovery.display_name);
           setIsVisible(discovery.is_visible);
+
+          setShareReligion(Boolean(discovery.faith_category));
+          setShareSect(Boolean(discovery.muslim_sect));
         }
       } catch {
         if (active) {
@@ -152,7 +167,25 @@ export default function DiscoverySettingsScreen() {
             profession: profile.profession,
             age: null,
             city: null,
+
             is_visible: true,
+
+            faith_category:
+              shareReligion &&
+              profile.faith_category &&
+              profile.faith_category !== "Prefer not to say"
+                ? profile.faith_category
+                : null,
+
+            muslim_sect:
+              shareReligion &&
+              shareSect &&
+              profile.faith_category === "Muslim" &&
+              profile.muslim_sect &&
+              profile.muslim_sect !== "Prefer not to say"
+                ? profile.muslim_sect
+                : null,
+
             updated_at: new Date().toISOString(),
           },
           { onConflict: "user_id" },
@@ -274,6 +307,60 @@ export default function DiscoverySettingsScreen() {
               autoCapitalize="words"
             />
 
+            {profile?.faith_category &&
+            profile.faith_category !== "Prefer not to say" ? (
+              <View style={{ marginBottom: 24 }}>
+                <Text style={styles.sectionTitle}>
+                  Religion & Firqa Privacy
+                </Text>
+
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 16,
+                  }}
+                >
+                  <Text style={styles.label}>
+                    Share Religion ({profile.faith_category})
+                  </Text>
+
+                  <Switch
+                    value={shareReligion}
+                    onValueChange={(value) => {
+                      setShareReligion(value);
+                      if (!value) setShareSect(false);
+                    }}
+                  />
+                </View>
+
+                {shareReligion &&
+                profile.faith_category === "Muslim" &&
+                profile.muslim_sect &&
+                profile.muslim_sect !== "Prefer not to say" ? (
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text style={styles.label}>
+                      Share Firqa ({profile.muslim_sect})
+                    </Text>
+
+                    <Switch value={shareSect} onValueChange={setShareSect} />
+                  </View>
+                ) : null}
+
+                <Text style={styles.note}>
+                  Both settings are OFF by default. You control what other
+                  members can see.
+                </Text>
+              </View>
+            ) : null}
+
             <Text style={styles.sectionTitle}>Public Profile Preview</Text>
 
             <View style={styles.preview}>
@@ -292,6 +379,21 @@ export default function DiscoverySettingsScreen() {
               <Text style={styles.previewText}>
                 Profession: {profile?.profession || "Not provided"}
               </Text>
+
+              {shareReligion && profile?.faith_category ? (
+                <Text style={styles.previewText}>
+                  Religion: {profile.faith_category}
+                </Text>
+              ) : null}
+
+              {shareReligion &&
+              shareSect &&
+              profile?.faith_category === "Muslim" &&
+              profile.muslim_sect ? (
+                <Text style={styles.previewText}>
+                  Firqa: {profile.muslim_sect}
+                </Text>
+              ) : null}
             </View>
 
             <Text style={styles.note}>

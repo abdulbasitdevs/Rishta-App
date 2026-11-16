@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -22,18 +23,80 @@ type DiscoveryProfile = {
   gender: string | null;
   education_level: string | null;
   profession: string | null;
+  faith_category: string | null;
+  muslim_sect: string | null;
   updated_at: string;
 };
 
-const genderFilters = ["All", "Male", "Female"];
+const genderOptions = ["All", "Male", "Female"];
+
+const religionOptions = [
+  "All",
+  "Muslim",
+  "Christian",
+  "Hindu",
+  "Sikh",
+  "Other",
+];
+
+const sectOptions = [
+  "All",
+  "Ahl-e-Hadith",
+  "Barelvi",
+  "Deobandi",
+  "Shia",
+  "Other",
+];
+
+type ChipGroupProps = {
+  title: string;
+  options: string[];
+  selected: string;
+  onChange: (value: string) => void;
+};
+
+function ChipGroup({ title, options, selected, onChange }: ChipGroupProps) {
+  return (
+    <View style={styles.filterGroup}>
+      <Text style={styles.filterLabel}>{title}</Text>
+
+      <View style={styles.chips}>
+        {options.map((option) => {
+          const active = selected === option;
+
+          return (
+            <Pressable
+              key={option}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              onPress={() => onChange(option)}
+              style={[styles.chip, active && styles.chipActive]}
+            >
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                {option}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
 
 export default function BrowseProfilesScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isWide = width >= 700;
 
   const [loading, setLoading] = useState(true);
   const [profiles, setProfiles] = useState<DiscoveryProfile[]>([]);
   const [search, setSearch] = useState("");
   const [genderFilter, setGenderFilter] = useState("All");
+  const [religionFilter, setReligionFilter] = useState("All");
+  const [sectFilter, setSectFilter] = useState("All");
+  const [educationFilter, setEducationFilter] = useState("All");
+  const [professionFilter, setProfessionFilter] = useState("All");
+  const [showFilters, setShowFilters] = useState(true);
   const [error, setError] = useState("");
 
   const loadProfiles = useCallback(async () => {
@@ -52,21 +115,22 @@ export default function BrowseProfilesScreen() {
       const { data, error: browseError } = await supabase
         .from("rishta_discovery_profiles")
         .select(
-          "user_id, display_name, gender, education_level, profession, updated_at",
+          "user_id, display_name, gender, education_level, profession, faith_category, muslim_sect, updated_at",
         )
         .eq("is_visible", true)
         .neq("user_id", authData.user.id)
         .order("updated_at", { ascending: false })
         .limit(50);
 
-      if (browseError) {
-        setError(browseError.message);
-        return;
-      }
+      if (browseError) throw browseError;
 
       setProfiles(data ?? []);
-    } catch {
-      setError("Unable to load profiles. Please try again.");
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unable to load profiles. Please try again.",
+      );
     } finally {
       setLoading(false);
     }
@@ -86,14 +150,27 @@ export default function BrowseProfilesScreen() {
     };
   }, [loadProfiles, router]);
 
+  const educationOptions = useMemo(() => {
+    const values = profiles
+      .map((profile) => profile.education_level?.trim())
+      .filter((value): value is string => Boolean(value));
+
+    return ["All", ...Array.from(new Set(values)).sort()];
+  }, [profiles]);
+
+  const professionOptions = useMemo(() => {
+    const values = profiles
+      .map((profile) => profile.profession?.trim())
+      .filter((value): value is string => Boolean(value));
+
+    return ["All", ...Array.from(new Set(values)).sort()];
+  }, [profiles]);
+
   const filteredProfiles = useMemo(() => {
     const query = search.trim().toLowerCase();
 
     return profiles.filter((profile) => {
-      const matchesGender =
-        genderFilter === "All" || profile.gender === genderFilter;
-
-      const searchableText = [
+      const searchable = [
         profile.display_name,
         profile.education_level,
         profile.profession,
@@ -102,157 +179,404 @@ export default function BrowseProfilesScreen() {
         .join(" ")
         .toLowerCase();
 
-      const matchesSearch = !query || searchableText.includes(query);
-
-      return matchesGender && matchesSearch;
+      return (
+        (!query || searchable.includes(query)) &&
+        (genderFilter === "All" || profile.gender === genderFilter) &&
+        (religionFilter === "All" ||
+          profile.faith_category === religionFilter) &&
+        (religionFilter !== "Muslim" ||
+          sectFilter === "All" ||
+          profile.muslim_sect === sectFilter) &&
+        (educationFilter === "All" ||
+          profile.education_level?.trim() === educationFilter) &&
+        (professionFilter === "All" ||
+          profile.profession?.trim() === professionFilter)
+      );
     });
-  }, [profiles, search, genderFilter]);
+  }, [
+    profiles,
+    search,
+    genderFilter,
+    religionFilter,
+    sectFilter,
+    educationFilter,
+    professionFilter,
+  ]);
+
+  const activeCount =
+    Number(Boolean(search.trim())) +
+    Number(genderFilter !== "All") +
+    Number(religionFilter !== "All") +
+    Number(religionFilter === "Muslim" && sectFilter !== "All") +
+    Number(educationFilter !== "All") +
+    Number(professionFilter !== "All");
+
+  function resetFilters() {
+    setSearch("");
+    setGenderFilter("All");
+    setReligionFilter("All");
+    setSectFilter("All");
+    setEducationFilter("All");
+    setProfessionFilter("All");
+  }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.screen}>
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.wrapper}>
-          <Pressable
-            style={styles.backButton}
-            onPress={() => router.replace("/dashboard")}
-          >
-            <Text style={styles.backText}>← Dashboard</Text>
-          </Pressable>
+        <View style={styles.page}>
+          <View style={styles.topBar}>
+            <Pressable
+              onPress={() => router.replace("/dashboard")}
+              style={styles.backButton}
+              accessibilityRole="button"
+            >
+              <Text style={styles.backText}>← Dashboard</Text>
+            </Pressable>
 
-          <View style={styles.header}>
-            <View style={styles.iconBox}>
-              <Text style={styles.heart}>♥</Text>
-            </View>
-
-            <Text style={styles.title}>Discover Rishta Profiles</Text>
-
-            <Text style={styles.subtitle}>
-              Explore profiles shared by members who have opted into discovery.
-            </Text>
+            <Text style={styles.topBrand}>RISHTA APP ♥</Text>
           </View>
 
-          <View style={styles.searchCard}>
-            <Text style={styles.label}>Search Profiles</Text>
-
-            <TextInput
-              style={styles.input}
-              placeholder="Search name, education or profession"
-              placeholderTextColor={colors.textSecondary}
-              value={search}
-              onChangeText={setSearch}
-              autoCapitalize="none"
-            />
-
-            <Text style={styles.label}>Gender</Text>
-
-            <View style={styles.filters}>
-              {genderFilters.map((option) => (
-                <Pressable
-                  key={option}
-                  onPress={() => setGenderFilter(option)}
-                  style={[
-                    styles.filter,
-                    genderFilter === option && styles.filterSelected,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.filterText,
-                      genderFilter === option && styles.filterTextSelected,
-                    ]}
-                  >
-                    {option}
-                  </Text>
-                </Pressable>
-              ))}
+          <View style={[styles.hero, isWide && styles.heroWide]}>
+            <View style={styles.heroIcon}>
+              <Text style={styles.heroHeart}>♥</Text>
             </View>
 
-            <View style={styles.resultsHeader}>
-              <Text style={styles.resultsText}>
-                {filteredProfiles.length} profiles found
+            <View style={styles.heroCopy}>
+              <Text style={styles.eyebrow}>DISCOVER YOUR CONNECTION</Text>
+
+              <Text
+                style={[styles.heroTitle, !isWide && styles.heroTitleSmall]}
+              >
+                Find Your Rishta
               </Text>
 
-              <Pressable onPress={() => void loadProfiles()} disabled={loading}>
-                <Text style={styles.refreshText}>Refresh</Text>
+              <Text style={styles.heroSubtitle}>
+                Explore profiles shared by members. Choose your preferences and
+                find a meaningful match.
+              </Text>
+
+              <View style={styles.privacyBadge}>
+                <Text style={styles.privacyBadgeText}>
+                  ♡ Only member-approved public details
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.searchPanel}>
+            <View style={styles.panelTop}>
+              <View style={styles.panelHeading}>
+                <Text style={styles.panelTitle}>Search & Filters</Text>
+
+                <Text style={styles.panelDescription}>
+                  Every filter is optional.
+                </Text>
+              </View>
+
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setShowFilters((value) => !value)}
+                style={styles.toggleButton}
+              >
+                <Text style={styles.toggleText}>
+                  {showFilters ? "Hide filters  −" : "Show filters  +"}
+                </Text>
+              </Pressable>
+            </View>
+
+            <Text style={styles.filterLabel}>Search by name or background</Text>
+
+            <View style={styles.searchBox}>
+              <Text style={styles.searchIcon}>⌕</Text>
+
+              <TextInput
+                accessibilityLabel="Search by name, education or profession"
+                placeholder="e.g. Doctor, Ayesha, Master's"
+                placeholderTextColor={colors.textSecondary}
+                style={styles.searchInput}
+                value={search}
+                onChangeText={setSearch}
+                autoCapitalize="none"
+                returnKeyType="search"
+              />
+
+              {search.length > 0 ? (
+                <Pressable
+                  onPress={() => setSearch("")}
+                  style={styles.clearSearch}
+                >
+                  <Text style={styles.clearSearchText}>×</Text>
+                </Pressable>
+              ) : null}
+            </View>
+
+            <Text style={styles.searchHint}>
+              Results update automatically as you type or select a filter.
+            </Text>
+
+            {showFilters ? (
+              <>
+                <View style={styles.sectionHeading}>
+                  <Text style={styles.sectionTitle}>Your preferences</Text>
+
+                  <Text style={styles.sectionSubtitle}>
+                    Select only what matters to you
+                  </Text>
+                </View>
+
+                <View style={styles.filterGrid}>
+                  <View style={isWide ? styles.halfWidth : styles.fullWidth}>
+                    <ChipGroup
+                      title="Gender"
+                      options={genderOptions}
+                      selected={genderFilter}
+                      onChange={setGenderFilter}
+                    />
+                  </View>
+
+                  <View style={isWide ? styles.halfWidth : styles.fullWidth}>
+                    <ChipGroup
+                      title="Religion"
+                      options={religionOptions}
+                      selected={religionFilter}
+                      onChange={(value) => {
+                        setReligionFilter(value);
+                        setSectFilter("All");
+                      }}
+                    />
+                  </View>
+
+                  {religionFilter === "Muslim" ? (
+                    <View style={isWide ? styles.halfWidth : styles.fullWidth}>
+                      <ChipGroup
+                        title="Firqa (only if shared)"
+                        options={sectOptions}
+                        selected={sectFilter}
+                        onChange={setSectFilter}
+                      />
+                    </View>
+                  ) : null}
+
+                  <View style={isWide ? styles.halfWidth : styles.fullWidth}>
+                    <ChipGroup
+                      title="Education"
+                      options={educationOptions}
+                      selected={educationFilter}
+                      onChange={setEducationFilter}
+                    />
+                  </View>
+
+                  <View style={isWide ? styles.halfWidth : styles.fullWidth}>
+                    <ChipGroup
+                      title="Profession"
+                      options={professionOptions}
+                      selected={professionFilter}
+                      onChange={setProfessionFilter}
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.comingSoon}>
+                  <Text style={styles.comingSoonTitle}>
+                    More filters are planned
+                  </Text>
+
+                  <Text style={styles.comingSoonText}>
+                    Age, City, Marital Status and Height will be available after
+                    public-sharing controls are ready.
+                  </Text>
+                </View>
+              </>
+            ) : null}
+
+            <View style={styles.filterFooter}>
+              <Text style={styles.activeText}>
+                {activeCount === 0
+                  ? "No filters applied"
+                  : `${activeCount} filter${
+                      activeCount === 1 ? "" : "s"
+                    } applied`}
+              </Text>
+
+              <Pressable
+                disabled={activeCount === 0}
+                accessibilityRole="button"
+                onPress={resetFilters}
+                style={[
+                  styles.resetButton,
+                  activeCount === 0 && styles.disabled,
+                ]}
+              >
+                <Text style={styles.resetText}>Reset all</Text>
               </Pressable>
             </View>
           </View>
 
-          {loading ? (
-            <View style={styles.centered}>
-              <ActivityIndicator size="large" color={colors.primary} />
-              <Text style={styles.subtitle}>Loading profiles...</Text>
-            </View>
-          ) : error ? (
-            <View style={styles.emptyCard}>
-              <Text style={styles.error}>{error}</Text>
-            </View>
-          ) : filteredProfiles.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyIcon}>♡</Text>
+          <View style={styles.resultsBar}>
+            <View>
+              <Text style={styles.resultsTitle}>Matching Profiles</Text>
 
-              <Text style={styles.emptyTitle}>No Profiles Found</Text>
-
-              <Text style={styles.subtitle}>
-                No published profiles match your filters yet. Try changing your
-                search or check again later.
+              <Text style={styles.resultsSubtitle}>
+                {loading
+                  ? "Looking for public profiles..."
+                  : `${filteredProfiles.length} matches from ${profiles.length} loaded profiles`}
               </Text>
             </View>
+
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void loadProfiles()}
+              disabled={loading}
+              style={[styles.refreshButton, loading && styles.disabled]}
+            >
+              <Text style={styles.refreshText}>⌕ Find Matches</Text>
+            </Pressable>
+          </View>
+
+          {loading ? (
+            <View style={styles.centerCard}>
+              <ActivityIndicator size="large" color={colors.primary} />
+
+              <Text style={styles.centerTitle}>Finding profiles...</Text>
+            </View>
+          ) : error ? (
+            <View style={styles.centerCard}>
+              <Text style={styles.errorText}>{error}</Text>
+
+              <Pressable
+                onPress={() => void loadProfiles()}
+                style={styles.retryButton}
+              >
+                <Text style={styles.retryText}>Try again</Text>
+              </Pressable>
+            </View>
+          ) : filteredProfiles.length === 0 ? (
+            <View style={styles.centerCard}>
+              <Text style={styles.emptyHeart}>♡</Text>
+
+              <Text style={styles.centerTitle}>
+                {profiles.length === 0
+                  ? "No public profiles yet"
+                  : "No matching profiles"}
+              </Text>
+
+              <Text style={styles.centerDescription}>
+                {profiles.length === 0
+                  ? "When other members publish their profiles, they will appear here."
+                  : "Try changing your search or removing a filter."}
+              </Text>
+
+              {activeCount > 0 ? (
+                <Pressable onPress={resetFilters} style={styles.retryButton}>
+                  <Text style={styles.retryText}>Clear filters</Text>
+                </Pressable>
+              ) : null}
+            </View>
           ) : (
-            <View style={styles.profileList}>
-              {filteredProfiles.map((profile) => (
-                <View key={profile.user_id} style={styles.profileCard}>
-                  <View style={styles.profileTop}>
-                    <View style={styles.avatar}>
-                      <Text style={styles.avatarText}>
-                        {profile.display_name.charAt(0).toUpperCase()}
+            <View style={styles.profileGrid}>
+              {filteredProfiles.map((profile) => {
+                const name = profile.display_name?.trim() || "Member";
+
+                return (
+                  <View
+                    key={profile.user_id}
+                    style={[
+                      styles.profileCard,
+                      isWide ? styles.cardHalf : styles.cardFull,
+                    ]}
+                  >
+                    <View style={styles.cardHeader}>
+                      <View style={styles.avatar}>
+                        <Text style={styles.avatarLetter}>
+                          {name.charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+
+                      <View style={styles.cardIdentity}>
+                        <Text style={styles.memberName} numberOfLines={2}>
+                          {name}
+                        </Text>
+
+                        <Text style={styles.memberGender}>
+                          {profile.gender || "Gender not provided"}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.profileDivider} />
+
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>Education</Text>
+
+                      <Text style={styles.infoValue} numberOfLines={2}>
+                        {profile.education_level || "Not provided"}
                       </Text>
                     </View>
 
-                    <View style={styles.profileInfo}>
-                      <Text style={styles.profileName}>
-                        {profile.display_name}
-                      </Text>
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>Profession</Text>
 
-                      <Text style={styles.profileMeta}>
-                        {profile.gender || "Gender not provided"}
+                      <Text style={styles.infoValue} numberOfLines={2}>
+                        {profile.profession || "Not provided"}
+                      </Text>
+                    </View>
+
+                    {profile.faith_category ? (
+                      <View style={styles.infoRow}>
+                        <Text style={styles.infoLabel}>Religion</Text>
+
+                        <Text style={styles.infoValue}>
+                          {profile.faith_category}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {profile.faith_category === "Muslim" &&
+                    profile.muslim_sect ? (
+                      <View style={styles.infoRow}>
+                        <Text style={styles.infoLabel}>Firqa</Text>
+
+                        <Text style={styles.infoValue}>
+                          {profile.muslim_sect}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    <Pressable
+                      style={styles.viewProfileButton}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/member-profile",
+                          params: { userId: profile.user_id },
+                        })
+                      }
+                    >
+                      <Text style={styles.viewProfileText}>View Profile →</Text>
+                    </Pressable>
+
+                    <View style={styles.cardFooter}>
+                      <Text style={styles.publicText}>
+                        ♡ Public details shared by this member
                       </Text>
                     </View>
                   </View>
-
-                  <View style={styles.divider} />
-
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Education</Text>
-
-                    <Text style={styles.detailValue}>
-                      {profile.education_level || "Not provided"}
-                    </Text>
-                  </View>
-
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Profession</Text>
-
-                    <Text style={styles.detailValue}>
-                      {profile.profession || "Not provided"}
-                    </Text>
-                  </View>
-
-                  <Text style={styles.privacyNote}>
-                    Only member-approved public details are shown.
-                  </Text>
-                </View>
-              ))}
+                );
+              })}
             </View>
           )}
 
-          <Text style={styles.footer}>
-            Private photos, email addresses, birth dates and family information
-            are not displayed here.
-          </Text>
+          <View style={styles.bottomNote}>
+            <Text style={styles.bottomTitle}>Privacy comes first</Text>
+
+            <Text style={styles.bottomText}>
+              Only opted-in public profiles appear here. Private photos, email
+              addresses, dates of birth and family details are not shown.
+              Results currently include up to 50 recent public profiles.
+            </Text>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -260,148 +584,360 @@ export default function BrowseProfilesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
     backgroundColor: colors.background,
   },
-  content: {
-    padding: spacing.xl,
-    alignItems: "center",
+  scrollContent: {
     flexGrow: 1,
+    padding: spacing.lg,
+    alignItems: "center",
   },
-  wrapper: {
+  page: {
     width: "100%",
-    maxWidth: 620,
+    maxWidth: 1100,
+    paddingBottom: spacing.xxl,
+  },
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.lg,
   },
   backButton: {
     paddingVertical: spacing.md,
-    marginBottom: spacing.xl,
-    alignSelf: "flex-start",
+    paddingRight: spacing.lg,
   },
   backText: {
-    color: colors.primary,
     fontSize: 14,
+    color: colors.primary,
     fontWeight: "700",
   },
-  header: {
-    alignItems: "center",
-    marginBottom: spacing.xxxl,
-  },
-  iconBox: {
-    width: 72,
-    height: 72,
-    borderRadius: radius.xl,
-    backgroundColor: colors.surfaceSoft,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: spacing.lg,
-  },
-  heart: {
-    color: colors.primary,
-    fontSize: 42,
-  },
-  title: {
-    fontSize: 27,
-    fontWeight: "800",
-    color: colors.heading,
-    textAlign: "center",
-    marginBottom: spacing.md,
-  },
-  subtitle: {
+  topBrand: {
     color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 23,
-    textAlign: "center",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1.4,
   },
-  searchCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
+  hero: {
+    backgroundColor: colors.surfaceSoft,
     borderRadius: radius.xl,
     padding: spacing.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
     marginBottom: spacing.xl,
   },
-  label: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "700",
+  heroWide: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xl,
+  },
+  heroIcon: {
+    width: 62,
+    height: 62,
+    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: spacing.md,
+  },
+  heroHeart: {
+    color: colors.primary,
+    fontSize: 32,
+  },
+  heroCopy: {
+    flex: 1,
+  },
+  eyebrow: {
+    color: colors.primary,
+    fontWeight: "800",
+    fontSize: 11,
+    letterSpacing: 1.3,
     marginBottom: spacing.sm,
   },
-  input: {
+  heroTitle: {
+    color: colors.heading,
+    fontWeight: "800",
+    fontSize: 32,
+    marginBottom: spacing.sm,
+  },
+  heroTitleSmall: {
+    fontSize: 26,
+  },
+  heroSubtitle: {
+    color: colors.textSecondary,
+    lineHeight: 22,
+    fontSize: 14,
+    maxWidth: 650,
+  },
+  privacyBadge: {
+    alignSelf: "flex-start",
+    marginTop: spacing.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface,
+  },
+  privacyBadgeText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  searchPanel: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    borderColor: colors.border,
+    borderWidth: 1,
+    marginBottom: spacing.xxl,
+  },
+  panelTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: spacing.md,
+    marginBottom: spacing.xl,
+  },
+  panelHeading: {
+    flex: 1,
+  },
+  panelTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: colors.heading,
+    marginBottom: spacing.xs,
+  },
+  panelDescription: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  toggleButton: {
+    padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.lg,
+  },
+  toggleText: {
+    color: colors.primary,
+    fontWeight: "700",
+    fontSize: 12,
+  },
+  filterLabel: {
+    color: colors.heading,
+    fontSize: 13,
+    fontWeight: "800",
+    marginBottom: spacing.md,
+  },
+  searchBox: {
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: colors.background,
-    minHeight: 52,
+    minHeight: 54,
     paddingHorizontal: spacing.lg,
-    fontSize: 15,
+  },
+  searchIcon: {
+    color: colors.primary,
+    fontSize: 25,
+    marginRight: spacing.md,
+  },
+  searchInput: {
+    flex: 1,
+    minHeight: 52,
     color: colors.text,
+    fontSize: 14,
+    paddingVertical: spacing.md,
+  },
+  clearSearch: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  clearSearchText: {
+    color: colors.textSecondary,
+    fontSize: 23,
+  },
+  searchHint: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: spacing.sm,
+  },
+  sectionHeading: {
+    marginTop: spacing.xxl,
+    marginBottom: spacing.lg,
+  },
+  sectionTitle: {
+    color: colors.heading,
+    fontSize: 16,
+    fontWeight: "800",
+    marginBottom: spacing.xs,
+  },
+  sectionSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  filterGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  halfWidth: {
+    width: "48%",
+  },
+  fullWidth: {
+    width: "100%",
+  },
+  filterGroup: {
     marginBottom: spacing.xl,
   },
-  filters: {
+  chips: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm,
-    marginBottom: spacing.xl,
   },
-  filter: {
-    paddingHorizontal: spacing.xl,
+  chip: {
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
+    backgroundColor: colors.background,
+    borderRadius: radius.full,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.full,
   },
-  filterSelected: {
+  chipActive: {
+    backgroundColor: colors.primary,
     borderColor: colors.primary,
-    backgroundColor: colors.surfaceSoft,
   },
-  filterText: {
-    color: colors.textSecondary,
-    fontSize: 13,
+  chipText: {
+    fontSize: 12,
     fontWeight: "600",
+    color: colors.textSecondary,
   },
-  filterTextSelected: {
-    color: colors.primary,
+  chipTextActive: {
+    color: colors.surface,
+    fontWeight: "800",
+  },
+  comingSoon: {
+    backgroundColor: colors.surfaceSoft,
+    padding: spacing.lg,
+    borderRadius: radius.lg,
+    marginTop: spacing.sm,
+  },
+  comingSoonTitle: {
+    color: colors.heading,
     fontWeight: "700",
+    fontSize: 13,
+    marginBottom: spacing.xs,
   },
-  resultsHeader: {
+  comingSoonText: {
+    color: colors.textSecondary,
+    lineHeight: 19,
+    fontSize: 12,
+  },
+  filterFooter: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    marginTop: spacing.md,
+    paddingTop: spacing.lg,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  resultsText: {
+  activeText: {
     color: colors.textSecondary,
-    fontSize: 13,
+    fontSize: 12,
+  },
+  resetButton: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+  },
+  resetText: {
+    color: colors.primary,
+    fontWeight: "800",
+    fontSize: 12,
+  },
+  disabled: {
+    opacity: 0.45,
+  },
+  resultsBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.lg,
+    gap: spacing.md,
+  },
+  resultsTitle: {
+    color: colors.heading,
+    fontSize: 20,
+    fontWeight: "800",
+    marginBottom: spacing.xs,
+  },
+  resultsSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  refreshButton: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.surface,
   },
   refreshText: {
     color: colors.primary,
-    fontWeight: "700",
     fontSize: 13,
+    fontWeight: "700",
   },
-  centered: {
-    padding: spacing.xxxl,
-    alignItems: "center",
-    gap: spacing.lg,
-  },
-  emptyCard: {
+  centerCard: {
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.xl,
-    backgroundColor: colors.surface,
     padding: spacing.xxxl,
     alignItems: "center",
     gap: spacing.lg,
   },
-  emptyIcon: {
-    fontSize: 48,
+  centerTitle: {
+    color: colors.heading,
+    fontSize: 19,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  centerDescription: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 21,
+    textAlign: "center",
+    maxWidth: 430,
+  },
+  emptyHeart: {
+    fontSize: 42,
     color: colors.primary,
   },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: colors.heading,
+  errorText: {
+    color: colors.error,
+    textAlign: "center",
+    fontSize: 13,
   },
-  profileList: {
+  retryButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: radius.lg,
+  },
+  retryText: {
+    color: colors.surface,
+    fontWeight: "800",
+    fontSize: 13,
+  },
+  profileGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
     gap: spacing.lg,
   },
   profileCard: {
@@ -411,78 +947,107 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
     padding: spacing.xl,
   },
-  profileTop: {
+  cardHalf: {
+    width: "48%",
+  },
+  cardFull: {
+    width: "100%",
+  },
+  cardHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.lg,
   },
   avatar: {
-    width: 58,
-    height: 58,
-    borderRadius: radius.full,
+    width: 54,
+    height: 54,
+    borderRadius: radius.xl,
     backgroundColor: colors.surfaceSoft,
-    justifyContent: "center",
     alignItems: "center",
+    justifyContent: "center",
   },
-  avatarText: {
-    fontSize: 24,
-    fontWeight: "800",
+  avatarLetter: {
     color: colors.primary,
+    fontSize: 23,
+    fontWeight: "800",
   },
-  profileInfo: {
+  cardIdentity: {
     flex: 1,
   },
-  profileName: {
-    fontSize: 19,
+  memberName: {
     color: colors.heading,
+    fontSize: 17,
     fontWeight: "800",
     marginBottom: spacing.xs,
   },
-  profileMeta: {
-    fontSize: 13,
+  memberGender: {
     color: colors.textSecondary,
+    fontSize: 13,
   },
-  divider: {
+  profileDivider: {
     height: 1,
     backgroundColor: colors.border,
     marginVertical: spacing.lg,
   },
-  detailRow: {
+  infoRow: {
     flexDirection: "row",
+    gap: spacing.md,
     justifyContent: "space-between",
-    gap: spacing.lg,
-    marginBottom: spacing.md,
+    paddingVertical: spacing.sm,
   },
-  detailLabel: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    flex: 1,
-  },
-  detailValue: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.text,
-    flex: 1,
-    textAlign: "right",
-  },
-  privacyNote: {
-    backgroundColor: colors.surfaceSoft,
-    padding: spacing.md,
-    borderRadius: radius.md,
+  infoLabel: {
     color: colors.textSecondary,
     fontSize: 12,
-    marginTop: spacing.md,
+    flex: 1,
   },
-  error: {
-    color: colors.error,
-    textAlign: "center",
+  infoValue: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "700",
+    textAlign: "right",
+    flex: 1,
+  },
+  cardFooter: {
+    marginTop: spacing.lg,
+    backgroundColor: colors.surfaceSoft,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  publicText: {
+    color: colors.textSecondary,
+    fontSize: 11,
+  },
+
+  viewProfileButton: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: spacing.xl,
+  },
+  viewProfileText: {
+    color: colors.surface,
     fontSize: 14,
+    fontWeight: "800",
   },
-  footer: {
+
+  bottomNote: {
+    marginTop: spacing.xxl,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.lg,
+  },
+  bottomTitle: {
+    color: colors.heading,
+    fontSize: 13,
+    fontWeight: "800",
+    marginBottom: spacing.sm,
+  },
+  bottomText: {
     color: colors.textSecondary,
     fontSize: 12,
     lineHeight: 20,
-    textAlign: "center",
-    marginVertical: spacing.xxxl,
   },
 });

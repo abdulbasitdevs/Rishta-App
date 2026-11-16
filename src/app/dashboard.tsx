@@ -186,6 +186,20 @@ export default function DashboardScreen() {
 
         <View style={styles.action}>
           <AppButton
+            title="Find Rishta"
+            onPress={() => router.push("/browse-profiles")}
+          />
+        </View>
+
+        <View style={styles.action}>
+          <AppButton
+            title="Received Requests"
+            onPress={() => router.push("/received-requests")}
+          />
+        </View>
+
+        <View style={styles.action}>
+          <AppButton
             title="Change Password"
             onPress={() => router.push("/change-password")}
           />

@@ -567,12 +567,21 @@ export default function ProfilePhotosScreen() {
               </View>
 
               {completed ? (
-                <View style={styles.buttonArea}>
-                  <AppButton
-                    title="Back to Dashboard"
-                    onPress={() => router.replace("/dashboard")}
-                  />
-                </View>
+                <>
+                  <View style={styles.buttonArea}>
+                    <AppButton
+                      title="Set Profile Discovery Visibility"
+                      onPress={() => router.push("/discovery-settings")}
+                    />
+                  </View>
+
+                  <View style={styles.buttonArea}>
+                    <AppButton
+                      title="Back to Dashboard"
+                      onPress={() => router.replace("/dashboard")}
+                    />
+                  </View>
+                </>
               ) : null}
             </View>
 

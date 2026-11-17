@@ -1,6 +1,7 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -12,37 +13,54 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { AppButton } from "@/components/ui/AppButton";
 import { supabase } from "@/lib/supabase";
-import { theme } from "@/theme/tokens";
 
-const { colors, spacing, radius } = theme;
+// Same premium theme used across Rishta App.
+const C = {
+  bg: "#05151D",
+  surface: "#102A30",
+  surfaceDark: "#08252C",
+  emerald: "#086B54",
+  emeraldBright: "#12D894",
+  gold: "#E7BD79",
+  goldLight: "#FFE2AB",
+  white: "#F8FBF9",
+  muted: "#B1C1C7",
+  border: "#42736F",
+  error: "#FF9F9F",
+  success: "#7BF0C3",
+};
+
+const serif = Platform.select({
+  ios: "Georgia",
+  android: "serif",
+  default: "Georgia",
+});
 
 export default function LoginScreen() {
   const router = useRouter();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [error, setError] = useState("");
+
+  // Existing Supabase Login functionality.
   async function handleLogin() {
     if (isSubmitting) return;
 
     setError("");
-    setMessage("");
 
     const cleanEmail = email.trim().toLowerCase();
 
-    // Validate required fields.
     if (!cleanEmail || !password) {
-      setError("Please fill in all fields.");
+      setError("Please enter your email and password.");
       return;
     }
 
-    // Validate email address.
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!emailPattern.test(cleanEmail)) {
@@ -53,7 +71,6 @@ export default function LoginScreen() {
     setIsSubmitting(true);
 
     try {
-      // Sign in using Supabase Authentication.
       const { data, error: loginError } =
         await supabase.auth.signInWithPassword({
           email: cleanEmail,
@@ -74,22 +91,20 @@ export default function LoginScreen() {
         return;
       }
 
-      // Verify that an authenticated session exists.
       if (!data.session || !data.user) {
         setError("Unable to establish a login session. Please try again.");
         return;
       }
 
-      // Clear the password after a successful login.
+      // Clear password from the form after login.
       setPassword("");
       setShowPassword(false);
 
-      // We will add protected dashboard navigation next.
-
+      // Preserve existing Dashboard navigation.
       router.replace("/dashboard");
     } catch {
       setError(
-        "Unable to connect right now. Please check your internet connection and try again.",
+        "Unable to connect right now. Please check your internet connection.",
       );
     } finally {
       setIsSubmitting(false);
@@ -107,132 +122,201 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.content}>
-            {/* Back Navigation */}
-            <Pressable
-              onPress={() => router.replace("/")}
-              style={styles.backButton}
-              accessibilityRole="button"
-              accessibilityLabel="Back to welcome"
-            >
-              <Text style={styles.backText}>← Back to welcome</Text>
-            </Pressable>
+          <View style={styles.wrapper}>
+            {/* Decorative background */}
+            <View pointerEvents="none" style={styles.topGlow} />
 
-            {/* Branding */}
-            <View style={styles.header}>
-              <View style={styles.logoBox}>
-                <Text style={styles.logoHeart}>♥</Text>
+            <View pointerEvents="none" style={styles.bottomGlow} />
+
+            <View pointerEvents="none" style={styles.goldenArch} />
+
+            {/* Header */}
+            <View style={styles.topBar}>
+              <Pressable
+                onPress={() => router.replace("/")}
+                style={({ pressed }) => [
+                  styles.backButton,
+                  pressed && styles.pressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Back to welcome"
+              >
+                <Text style={styles.backArrow}>←</Text>
+              </Pressable>
+
+              <View style={styles.brandGroup}>
+                <Text style={styles.brandHeart}>♡</Text>
+
+                <Text style={styles.brandName}>
+                  Rishta <Text style={styles.brandGold}>App</Text>
+                </Text>
               </View>
 
-              <Text style={styles.title}>Welcome back</Text>
-
-              <Text style={styles.subtitle}>
-                Your journey to a meaningful connection continues here.
-              </Text>
+              <View style={styles.headerSpacer} />
             </View>
 
-            {/* Login Form */}
-            <View style={styles.form}>
-              <Text style={styles.label}>Email address</Text>
-
-              <TextInput
-                style={styles.input}
-                placeholder="you@example.com"
-                placeholderTextColor={colors.textSecondary}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="email"
-                value={email}
-                onChangeText={setEmail}
-                accessibilityLabel="Email address"
-                editable={!isSubmitting}
-              />
-
-              <Text style={styles.label}>Password</Text>
-
-              <View style={styles.passwordContainer}>
-                <TextInput
-                  style={styles.passwordInput}
-                  placeholder="Enter your password"
-                  placeholderTextColor={colors.textSecondary}
-                  secureTextEntry={!showPassword}
-                  autoComplete="current-password"
-                  value={password}
-                  onChangeText={setPassword}
-                  accessibilityLabel="Password"
-                  editable={!isSubmitting}
-                  onSubmitEditing={() => {
-                    void handleLogin();
-                  }}
-                />
-
-                <Pressable
-                  style={styles.showButton}
-                  onPress={() => setShowPassword(!showPassword)}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    showPassword ? "Hide password" : "Show password"
-                  }
-                >
-                  <Text style={styles.showText}>
-                    {showPassword ? "Hide" : "Show"}
-                  </Text>
-                </Pressable>
+            {/* Hero */}
+            <View style={styles.hero}>
+              <View style={styles.ornamentRow}>
+                <View style={styles.ornamentLine} />
+                <Text style={styles.ornament}>✦ ❦ ✦</Text>
+                <View style={styles.ornamentLine} />
               </View>
 
-              {/* Password reset will be implemented next */}
+              <Text style={styles.title}>Welcome Back</Text>
 
+              <Text style={styles.subtitle}>
+                Continue your journey to a meaningful
+                {"\n"}connection.
+              </Text>
+
+              <View style={styles.heartDivider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerHeart}>♡</Text>
+                <View style={styles.dividerLine} />
+              </View>
+            </View>
+
+            {/* Login card */}
+            <View style={styles.loginCard}>
+              {/* Email Address */}
+              <View style={styles.fieldGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.labelIcon}>✉</Text>
+                  <Text style={styles.label}>Email Address</Text>
+                </View>
+
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputIcon}>✉</Text>
+
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your email address"
+                    placeholderTextColor={C.muted}
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete="email"
+                    accessibilityLabel="Email address"
+                    editable={!isSubmitting}
+                    returnKeyType="next"
+                  />
+                </View>
+              </View>
+
+              {/* Password */}
+              <View style={styles.fieldGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.labelIcon}>♢</Text>
+                  <Text style={styles.label}>Password</Text>
+                </View>
+
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputIcon}>♢</Text>
+
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your password"
+                    placeholderTextColor={C.muted}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                    autoComplete="current-password"
+                    accessibilityLabel="Password"
+                    editable={!isSubmitting}
+                    returnKeyType="go"
+                    onSubmitEditing={() => {
+                      void handleLogin();
+                    }}
+                  />
+
+                  <Pressable
+                    onPress={() => setShowPassword(!showPassword)}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      showPassword ? "Hide password" : "Show password"
+                    }
+                    style={styles.showButton}
+                  >
+                    <Text style={styles.showText}>
+                      {showPassword ? "Hide" : "Show"}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* Forgot Password */}
               <Pressable
                 onPress={() => router.push("/forgot-password")}
                 hitSlop={12}
                 accessibilityRole="button"
+                style={styles.forgotButton}
               >
-                <Text style={styles.forgotText}>Forgot password?</Text>
+                <Text style={styles.forgotText}>Forgot Password?</Text>
               </Pressable>
 
-              {/* Error Message */}
+              {/* Login error */}
               {error ? (
-                <Text style={styles.error} accessibilityRole="alert">
-                  {error}
-                </Text>
+                <View style={styles.errorBox}>
+                  <Text style={styles.errorText} accessibilityRole="alert">
+                    {error}
+                  </Text>
+                </View>
               ) : null}
 
-              {/* Success Message */}
-              {message ? (
-                <Text style={styles.message} accessibilityRole="alert">
-                  {message}
-                </Text>
-              ) : null}
+              {/* Sign In Button */}
+              <Pressable
+                onPress={() => void handleLogin()}
+                disabled={isSubmitting}
+                accessibilityRole="button"
+                style={({ pressed }) => [
+                  styles.signInButton,
+                  (pressed || isSubmitting) && styles.pressed,
+                ]}
+              >
+                {isSubmitting ? (
+                  <View style={styles.loadingRow}>
+                    <ActivityIndicator color={C.white} size="small" />
+                    <Text style={styles.signInText}>Signing In...</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.signInText}>Sign In →</Text>
+                )}
+              </Pressable>
 
-              {/* Login Button */}
-              <View style={styles.loginAction}>
-                <AppButton
-                  title="Sign In"
-                  onPress={handleLogin}
-                  loading={isSubmitting}
-                  disabled={isSubmitting}
-                />
-              </View>
+              {/* Create Account */}
+              <Pressable
+                onPress={() => router.push("/account-type")}
+                accessibilityRole="button"
+                accessibilityLabel="Create an account"
+                style={styles.createAccountLink}
+              >
+                <Text style={styles.createAccountText}>
+                  New to Rishta App?{" "}
+                  <Text style={styles.createAccountHighlight}>
+                    Create an Account
+                  </Text>
+                </Text>
+              </Pressable>
             </View>
 
-            {/* Signup Navigation */}
-            <Pressable
-              onPress={() => router.push("/signup")}
-              style={styles.signupLink}
-              accessibilityRole="button"
-              accessibilityLabel="Create an account"
-            >
-              <Text style={styles.signupText}>
-                New to Rishta App?{" "}
-                <Text style={styles.signupHighlight}>Create an account</Text>
-              </Text>
-            </Pressable>
-
-            {/* Privacy Note */}
+            {/* Privacy footer */}
             <View style={styles.footer}>
-              <Text style={styles.footerIcon}>♡</Text>
-              <Text style={styles.footerText}>Your privacy matters to us</Text>
+              <View style={styles.privacyRow}>
+                <Text style={styles.privacyIcon}>♢</Text>
+
+                <Text style={styles.privacyText}>
+                  Your privacy matters to us
+                </Text>
+              </View>
+
+              <View style={styles.footerOrnament}>
+                <View style={styles.footerLine} />
+                <Text style={styles.footerFlower}>❦</Text>
+                <View style={styles.footerLine} />
+              </View>
             </View>
           </View>
         </ScrollView>
@@ -244,7 +328,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: C.bg,
   },
 
   keyboardView: {
@@ -255,168 +339,381 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: spacing.xl,
+    paddingHorizontal: 18,
+    paddingVertical: 20,
   },
 
-  content: {
+  wrapper: {
+    flexGrow: 1,
     width: "100%",
-    maxWidth: 440,
+    maxWidth: 520,
+    justifyContent: "center",
+    paddingBottom: 25,
+  },
+
+  // Background decorations
+  topGlow: {
+    position: "absolute",
+    top: -100,
+    left: -130,
+    width: 270,
+    height: 270,
+    borderRadius: 135,
+    backgroundColor: "#074239",
+    opacity: 0.6,
+  },
+
+  bottomGlow: {
+    position: "absolute",
+    bottom: -150,
+    right: -130,
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    backgroundColor: "#073D37",
+    opacity: 0.6,
+  },
+
+  goldenArch: {
+    position: "absolute",
+    top: 25,
+    left: 0,
+    right: 0,
+    height: 560,
+    borderTopLeftRadius: 240,
+    borderTopRightRadius: 240,
+    borderTopWidth: 1.5,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: "rgba(231,189,121,0.45)",
+  },
+
+  // Top navigation
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 34,
+    zIndex: 2,
   },
 
   backButton: {
-    alignSelf: "flex-start",
-    paddingVertical: spacing.sm,
-    marginBottom: spacing.xxxl,
-  },
-
-  backText: {
-    color: colors.primary,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-
-  header: {
-    alignItems: "center",
-    marginBottom: spacing.xxxl,
-  },
-
-  logoBox: {
-    width: 72,
-    height: 72,
-    borderRadius: radius.xl,
-    backgroundColor: colors.surfaceSoft,
+    width: 44,
+    height: 44,
+    borderRadius: 13,
+    borderWidth: 1.5,
+    borderColor: C.gold,
+    backgroundColor: C.surfaceDark,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: spacing.xl,
   },
 
-  logoHeart: {
-    color: colors.primary,
-    fontSize: 42,
+  backArrow: {
+    color: C.gold,
+    fontSize: 27,
+    lineHeight: 32,
+  },
+
+  brandGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+
+  brandHeart: {
+    color: C.gold,
+    fontSize: 32,
+  },
+
+  brandName: {
+    color: C.white,
+    fontSize: 24,
+    fontFamily: serif,
+    fontWeight: "700",
+  },
+
+  brandGold: {
+    color: C.gold,
+  },
+
+  headerSpacer: {
+    width: 44,
+  },
+
+  // Welcome heading
+  hero: {
+    alignItems: "center",
+    paddingTop: 28,
+    paddingBottom: 30,
+  },
+
+  ornamentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 18,
+  },
+
+  ornamentLine: {
+    width: 32,
+    height: 1,
+    backgroundColor: C.gold,
+  },
+
+  ornament: {
+    color: C.gold,
+    fontSize: 22,
+    textAlign: "center",
   },
 
   title: {
-    color: colors.heading,
-    fontSize: 32,
-    fontWeight: "800",
+    fontFamily: serif,
+    color: C.goldLight,
+    fontSize: 39,
+    fontWeight: "700",
     textAlign: "center",
-    marginBottom: spacing.md,
+    lineHeight: 48,
   },
 
   subtitle: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 25,
+    color: C.white,
+    fontFamily: serif,
+    fontSize: 17,
+    lineHeight: 27,
     textAlign: "center",
-    maxWidth: 300,
+    maxWidth: 350,
+    marginTop: 12,
   },
 
-  form: {
-    gap: spacing.md,
+  heartDivider: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 13,
+    marginTop: 21,
+  },
+
+  dividerLine: {
+    width: 74,
+    height: 1,
+    backgroundColor: C.gold,
+    opacity: 0.8,
+  },
+
+  dividerHeart: {
+    color: C.goldLight,
+    fontSize: 34,
+    lineHeight: 40,
+  },
+
+  // Login card
+  loginCard: {
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 25,
+    paddingHorizontal: 20,
+    paddingTop: 30,
+    paddingBottom: 26,
+    gap: 16,
+    shadowColor: "#000000",
+    shadowOffset: {
+      width: 0,
+      height: 10,
+    },
+    shadowOpacity: 0.22,
+    shadowRadius: 20,
+    elevation: 4,
+  },
+
+  fieldGroup: {
+    gap: 10,
+  },
+
+  labelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+
+  labelIcon: {
+    color: C.gold,
+    fontSize: 23,
+    width: 27,
+    textAlign: "center",
   },
 
   label: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "600",
+    color: C.white,
+    fontFamily: serif,
+    fontSize: 18,
+    fontWeight: "700",
+  },
+
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 57,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    backgroundColor: C.surfaceDark,
+    paddingLeft: 15,
+  },
+
+  inputIcon: {
+    fontSize: 23,
+    color: C.muted,
+    width: 28,
+    textAlign: "center",
+    marginRight: 10,
   },
 
   input: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.lg,
-    minHeight: 54,
-    fontSize: 16,
-    color: colors.text,
-  },
-
-  passwordContainer: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    flexDirection: "row",
-    alignItems: "center",
-    minHeight: 54,
-  },
-
-  passwordInput: {
     flex: 1,
     minWidth: 0,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    fontSize: 16,
-    color: colors.text,
+    minHeight: 54,
+    paddingVertical: 10,
+    paddingRight: 12,
+    color: C.white,
+    fontSize: 15,
   },
 
   showButton: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingHorizontal: 14,
+    paddingVertical: 15,
   },
 
   showText: {
-    color: colors.primary,
-    fontSize: 13,
-    fontWeight: "600",
+    color: C.goldLight,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  // Forgot password
+  forgotButton: {
+    alignSelf: "flex-end",
+    paddingVertical: 5,
+    marginTop: -3,
   },
 
   forgotText: {
-    alignSelf: "flex-end",
-    color: colors.primary,
+    color: C.goldLight,
     fontSize: 14,
     fontWeight: "600",
-    marginTop: spacing.xs,
+    textDecorationLine: "underline",
   },
 
-  loginAction: {
-    marginTop: spacing.lg,
+  // Error
+  errorBox: {
+    backgroundColor: "#3A252A",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#8D4448",
+    padding: 12,
   },
 
-  error: {
-    color: colors.error,
-    fontSize: 13,
-  },
-
-  message: {
-    color: colors.success,
+  errorText: {
+    color: C.error,
     fontSize: 13,
     lineHeight: 20,
   },
 
-  signupLink: {
-    marginTop: spacing.xxl,
+  // Sign in button
+  signInButton: {
+    minHeight: 62,
+    width: "100%",
+    borderRadius: 34,
+    borderWidth: 2,
+    borderColor: C.emeraldBright,
+    backgroundColor: C.emerald,
     alignItems: "center",
-    paddingVertical: spacing.sm,
+    justifyContent: "center",
+    marginTop: 12,
+    shadowColor: C.emeraldBright,
+    shadowOffset: {
+      width: 0,
+      height: 5,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 3,
   },
 
-  signupText: {
-    color: colors.textSecondary,
-    fontSize: 14,
+  signInText: {
+    color: C.white,
+    fontSize: 21,
+    fontWeight: "800",
     textAlign: "center",
   },
 
-  signupHighlight: {
-    color: colors.primary,
-    fontWeight: "700",
-  },
-
-  footer: {
+  loadingRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.sm,
-    marginTop: spacing.xxxl,
+    gap: 12,
   },
 
-  footerIcon: {
-    color: colors.success,
-    fontSize: 18,
+  pressed: {
+    opacity: 0.7,
   },
 
-  footerText: {
-    color: colors.textSecondary,
-    fontSize: 12,
+  // Signup link
+  createAccountLink: {
+    alignItems: "center",
+    paddingVertical: 12,
+    marginTop: 2,
+  },
+
+  createAccountText: {
+    color: C.white,
+    fontSize: 13,
+    lineHeight: 22,
+    textAlign: "center",
+  },
+
+  createAccountHighlight: {
+    color: C.goldLight,
+    fontWeight: "800",
+    textDecorationLine: "underline",
+  },
+
+  // Privacy footer
+  footer: {
+    alignItems: "center",
+    paddingTop: 32,
+    gap: 22,
+  },
+
+  privacyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+
+  privacyIcon: {
+    color: C.gold,
+    fontSize: 25,
+  },
+
+  privacyText: {
+    color: C.muted,
+    fontSize: 13,
+  },
+
+  footerOrnament: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+
+  footerLine: {
+    width: 70,
+    height: 1,
+    backgroundColor: C.gold,
+    opacity: 0.7,
+  },
+
+  footerFlower: {
+    fontSize: 27,
+    color: C.gold,
   },
 });

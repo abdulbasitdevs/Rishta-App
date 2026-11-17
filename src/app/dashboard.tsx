@@ -2,6 +2,8 @@ import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,21 +11,116 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { AppButton } from "@/components/ui/AppButton";
 import { supabase } from "@/lib/supabase";
-import { theme } from "@/theme/tokens";
 
-const { colors, spacing, radius } = theme;
+// Same premium colors used on all Rishta App pages.
+const C = {
+  bg: "#05151D",
+  surface: "#102A30",
+  surfaceDark: "#08252C",
+  panel: "#0A3031",
+  emerald: "#086B54",
+  emeraldBright: "#12D894",
+  gold: "#E7BD79",
+  goldLight: "#FFE2AB",
+  white: "#F8FBF9",
+  muted: "#B1C1C7",
+  border: "#42736F",
+  error: "#FF9F9F",
+  success: "#7BF0C3",
+};
+
+const serif = Platform.select({
+  ios: "Georgia",
+  android: "serif",
+  default: "Georgia",
+});
+
+type QuickActionProps = {
+  icon: string;
+  title: string;
+  description: string;
+  onPress: () => void;
+  featured?: boolean;
+};
+
+function QuickAction({
+  icon,
+  title,
+  description,
+  onPress,
+  featured = false,
+}: QuickActionProps) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.quickCard,
+        featured && styles.quickCardFeatured,
+        pressed && styles.pressed,
+      ]}
+    >
+      <View style={styles.quickIconCircle}>
+        <Text style={styles.quickIcon}>{icon}</Text>
+      </View>
+
+      <Text style={styles.quickTitle}>{title}</Text>
+
+      <Text style={styles.quickDescription}>{description}</Text>
+    </Pressable>
+  );
+}
+
+type BottomItemProps = {
+  icon: string;
+  label: string;
+  active?: boolean;
+  onPress: () => void;
+};
+
+function BottomItem({ icon, label, active = false, onPress }: BottomItemProps) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.bottomItem,
+        active && styles.bottomItemActive,
+        pressed && styles.pressed,
+      ]}
+    >
+      <Text style={[styles.bottomIcon, active && styles.bottomIconActive]}>
+        {icon}
+      </Text>
+
+      <Text
+        style={[styles.bottomLabel, active && styles.bottomLabelActive]}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
 
 export default function DashboardScreen() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
+  const [authenticated, setAuthenticated] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const [email, setEmail] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [error, setError] = useState("");
 
+  const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("Member");
+
+  const [error, setError] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // Check real Supabase user session.
   useEffect(() => {
     let active = true;
 
@@ -48,12 +145,17 @@ export default function DashboardScreen() {
           return;
         }
 
-        setEmail(data.user.email ?? "");
-        setFullName(
-          typeof data.user.user_metadata?.full_name === "string"
-            ? data.user.user_metadata.full_name
-            : "Welcome",
-        );
+        const user = data.user;
+
+        const savedName =
+          typeof user.user_metadata?.full_name === "string"
+            ? user.user_metadata.full_name.trim()
+            : "";
+
+        setFullName(savedName || "Member");
+        setEmail(user.email ?? "");
+        setAuthenticated(true);
+        setError("");
       } catch {
         if (active) {
           setError("Unable to verify your session. Please try again.");
@@ -68,7 +170,10 @@ export default function DashboardScreen() {
     void checkAuthentication();
 
     const { data: listener } = supabase.auth.onAuthStateChange((event) => {
+      if (!active) return;
+
       if (event === "SIGNED_OUT") {
+        setAuthenticated(false);
         router.replace("/login");
       }
     });
@@ -84,6 +189,7 @@ export default function DashboardScreen() {
 
     setSigningOut(true);
     setError("");
+    setMenuOpen(false);
 
     try {
       const { error: logoutError } = await supabase.auth.signOut({
@@ -103,120 +209,368 @@ export default function DashboardScreen() {
     }
   }
 
+  const firstName = fullName.split(/\s+/)[0] || "Member";
+
+  const initials =
+    fullName
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join("") || "R";
+
   if (loading) {
     return (
       <SafeAreaView style={styles.centered}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingHeart}>♡</Text>
+
+        <Text style={styles.loadingBrand}>
+          Rishta <Text style={styles.brandGold}>App</Text>
+        </Text>
+
+        <ActivityIndicator size="large" color={C.emeraldBright} />
+
         <Text style={styles.loadingText}>Checking your account...</Text>
       </SafeAreaView>
     );
   }
 
-  if (error && !email) {
+  if (!authenticated) {
     return (
       <SafeAreaView style={styles.centered}>
-        <Text style={styles.error}>{error}</Text>
-        <View style={styles.action}>
-          <AppButton
-            title="Go to Login"
+        <Text style={styles.loadingHeart}>♡</Text>
+
+        <Text style={styles.loadingText}>{error || "Opening login..."}</Text>
+
+        {error ? (
+          <Pressable
+            accessibilityRole="button"
+            style={styles.primaryButton}
             onPress={() => router.replace("/login")}
-          />
-        </View>
+          >
+            <Text style={styles.primaryButtonText}>Go to Login →</Text>
+          </Pressable>
+        ) : (
+          <ActivityIndicator color={C.emeraldBright} />
+        )}
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <View style={styles.logoBox}>
-            <Text style={styles.logoHeart}>♥</Text>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.wrapper}>
+          {/* Background decorations */}
+          <View pointerEvents="none" style={styles.topGlow} />
+
+          <View pointerEvents="none" style={styles.goldenArch} />
+
+          {/* Header */}
+          <View style={styles.topBar}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open menu"
+              accessibilityState={{
+                expanded: menuOpen,
+              }}
+              onPress={() => setMenuOpen(!menuOpen)}
+              style={styles.menuButton}
+            >
+              <Text style={styles.menuIcon}>☰</Text>
+            </Pressable>
+
+            <View style={styles.brandGroup}>
+              <Text style={styles.brandHeart}>♡</Text>
+
+              <Text style={styles.brandName}>
+                Rishta <Text style={styles.brandGold}>App</Text>
+              </Text>
+            </View>
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="My Profile"
+              onPress={() => router.push("/my-profile")}
+              style={styles.smallAvatar}
+            >
+              <Text style={styles.smallAvatarText}>{initials}</Text>
+            </Pressable>
           </View>
 
-          <Text style={styles.title}>Welcome to Rishta App</Text>
+          {/* Expandable account menu */}
+          {menuOpen ? (
+            <View style={styles.menuPanel}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setMenuOpen(false);
+                  router.push("/my-profile");
+                }}
+                style={styles.menuLink}
+              >
+                <Text style={styles.menuLinkText}>♙ My Profile</Text>
+              </Pressable>
 
-          <Text style={styles.subtitle}>
-            Your journey towards a meaningful connection starts here.
-          </Text>
+              <View style={styles.menuDivider} />
+
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setMenuOpen(false);
+                  router.push("/change-password");
+                }}
+                style={styles.menuLink}
+              >
+                <Text style={styles.menuLinkText}>♢ Change Password</Text>
+              </Pressable>
+
+              <View style={styles.menuDivider} />
+
+              <Pressable
+                accessibilityRole="button"
+                disabled={signingOut}
+                onPress={() => void handleLogout()}
+                style={styles.menuLink}
+              >
+                <Text style={styles.logoutText}>
+                  {signingOut ? "Signing Out..." : "↪  Log Out"}
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          {/* Ornamental heading */}
+          <View style={styles.ornamentRow}>
+            <View style={styles.ornamentLine} />
+
+            <Text style={styles.ornament}>✦ ❦ ✦</Text>
+
+            <View style={styles.ornamentLine} />
+          </View>
+
+          {/* Personalized greeting */}
+          <View style={styles.greeting}>
+            <View style={styles.largeAvatar}>
+              <Text style={styles.largeAvatarText}>{initials}</Text>
+            </View>
+
+            <View style={styles.greetingText}>
+              <Text style={styles.salaam}>Assalamu Alaikum,</Text>
+
+              <Text style={styles.userName}>{firstName}</Text>
+
+              <Text style={styles.greetingSubtitle}>
+                Your journey towards a meaningful connection continues here.
+              </Text>
+            </View>
+          </View>
+
+          {/* Profile setup card */}
+          <View style={styles.profileCard}>
+            <View style={styles.profileCardTop}>
+              <View style={styles.profileCardIcon}>
+                <Text style={styles.profileIconText}>♡</Text>
+              </View>
+
+              <View style={styles.profileCardText}>
+                <Text style={styles.profileCardTitle}>
+                  Complete Your Profile
+                </Text>
+
+                <Text style={styles.profileCardDescription}>
+                  Tell us about yourself and your preferences to help others get
+                  to know you.
+                </Text>
+              </View>
+            </View>
+
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push("/profile-setup")}
+              style={({ pressed }) => [
+                styles.profileButton,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.profileButtonText}>Set Up My Profile →</Text>
+            </Pressable>
+          </View>
+
+          {/* Quick Actions */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Quick Access</Text>
+
+            <Text style={styles.sectionOrnament}>✧</Text>
+          </View>
+
+          <View style={styles.quickGrid}>
+            <QuickAction
+              icon="⌕"
+              title="Find Rishta"
+              description="Discover profiles"
+              featured
+              onPress={() => router.push("/browse-profiles")}
+            />
+
+            <QuickAction
+              icon="♡"
+              title="Matches"
+              description="See accepted matches"
+              onPress={() => router.push("/browse-profiles")}
+            />
+
+            <QuickAction
+              icon="✉"
+              title="Invitations"
+              description="View received requests"
+              onPress={() => router.push("/received-requests")}
+            />
+
+            <QuickAction
+              icon="♙"
+              title="My Profile"
+              description="View your details"
+              onPress={() => router.push("/my-profile")}
+            />
+          </View>
+
+          {/* Discover section */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Find Your Perfect Rishta</Text>
+          </View>
+
+          <View style={styles.discoverCard}>
+            <View style={styles.discoverIconCircle}>
+              <Text style={styles.discoverIcon}>♡</Text>
+            </View>
+
+            <Text style={styles.discoverTitle}>
+              A Meaningful Connection Awaits
+            </Text>
+
+            <Text style={styles.discoverDescription}>
+              Explore member profiles, learn about shared values and send an
+              invitation when someone feels right for you.
+            </Text>
+
+            <View style={styles.discoverDivider}>
+              <View style={styles.discoverLine} />
+              <Text style={styles.discoverHeart}>✧</Text>
+              <View style={styles.discoverLine} />
+            </View>
+
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push("/browse-profiles")}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.primaryButtonText}>Explore Profiles →</Text>
+            </Pressable>
+          </View>
+
+          {/* Account information */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Your Account</Text>
+          </View>
+
+          <View style={styles.accountCard}>
+            <View style={styles.accountRow}>
+              <Text style={styles.accountLabel}>Full Name</Text>
+
+              <Text style={styles.accountValue}>{fullName}</Text>
+            </View>
+
+            <View style={styles.accountDivider} />
+
+            <View style={styles.accountRow}>
+              <Text style={styles.accountLabel}>Email Address</Text>
+
+              <Text style={styles.accountValue}>{email || "Not provided"}</Text>
+            </View>
+
+            <View style={styles.accountDivider} />
+
+            <View style={styles.accountRow}>
+              <Text style={styles.accountLabel}>Account Status</Text>
+
+              <Text style={styles.accountStatus}>✓ Signed In</Text>
+            </View>
+
+            <View style={styles.accountDivider} />
+
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push("/change-password")}
+              style={styles.accountLink}
+            >
+              <Text style={styles.accountLinkText}>♢ Change Password</Text>
+
+              <Text style={styles.accountLinkArrow}>→</Text>
+            </Pressable>
+          </View>
+
+          {/* Logout */}
+          {error ? (
+            <Text style={styles.errorText} accessibilityRole="alert">
+              {error}
+            </Text>
+          ) : null}
+
+          <Pressable
+            accessibilityRole="button"
+            disabled={signingOut}
+            onPress={() => void handleLogout()}
+            style={({ pressed }) => [
+              styles.logoutButton,
+              (pressed || signingOut) && styles.pressed,
+            ]}
+          >
+            {signingOut ? (
+              <ActivityIndicator color={C.gold} />
+            ) : (
+              <Text style={styles.logoutButtonText}>Log Out</Text>
+            )}
+          </Pressable>
+
+          <View style={styles.footer}>
+            <Text style={styles.footerHeart}>♡</Text>
+
+            <Text style={styles.footerText}>Your privacy matters to us</Text>
+          </View>
         </View>
+      </ScrollView>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Your Account</Text>
+      {/* Fixed Bottom Navigation */}
+      <View style={styles.bottomNavOuter}>
+        <View style={styles.bottomNav}>
+          <BottomItem icon="⌂" label="Home" active onPress={() => {}} />
 
-          <Text style={styles.label}>Full Name</Text>
-          <Text style={styles.value}>{fullName}</Text>
-
-          <View style={styles.divider} />
-
-          <Text style={styles.label}>Email Address</Text>
-          <Text style={styles.value}>{email}</Text>
-
-          <View style={styles.divider} />
-
-          <Text style={styles.label}>Account Status</Text>
-          <Text style={styles.status}>✓ Signed In</Text>
-        </View>
-
-        <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>What's Next?</Text>
-
-          <Text style={styles.infoText}>
-            Your account is ready. Soon you'll be able to create your
-            matrimonial profile, set partner preferences, and discover
-            meaningful matches.
-          </Text>
-        </View>
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        <View style={styles.action}>
-          <AppButton
-            title="Create My Profile"
-            onPress={() => router.push("/profile-setup")}
+          <BottomItem
+            icon="⌕"
+            label="Find Rishta"
+            onPress={() => router.push("/browse-profiles")}
           />
-        </View>
 
-        <View style={{ marginTop: 12 }}>
-          <AppButton
-            title="My Profile"
+          <BottomItem
+            icon="✉"
+            label="Requests"
+            onPress={() => router.push("/received-requests")}
+          />
+
+          <BottomItem
+            icon="♙"
+            label="Profile"
             onPress={() => router.push("/my-profile")}
           />
         </View>
-
-        <View style={styles.action}>
-          <AppButton
-            title="Find Rishta"
-            onPress={() => router.push("/browse-profiles")}
-          />
-        </View>
-
-        <View style={styles.action}>
-          <AppButton
-            title="Received Requests"
-            onPress={() => router.push("/received-requests")}
-          />
-        </View>
-
-        <View style={styles.action}>
-          <AppButton
-            title="Change Password"
-            onPress={() => router.push("/change-password")}
-          />
-        </View>
-
-        <View style={styles.action}>
-          <AppButton
-            title="Log Out"
-            variant="secondary"
-            onPress={handleLogout}
-            loading={signingOut}
-            disabled={signingOut}
-          />
-        </View>
-
-        <Text style={styles.footer}>Your privacy matters to us ♡</Text>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -224,127 +578,631 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: C.bg,
   },
+
   centered: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: C.bg,
     justifyContent: "center",
     alignItems: "center",
-    padding: spacing.xl,
+    padding: 25,
+    gap: 15,
   },
-  loadingText: {
-    color: colors.textSecondary,
-    marginTop: spacing.lg,
+
+  loadingHeart: {
+    color: C.gold,
+    fontSize: 56,
   },
-  content: {
-    flexGrow: 1,
-    padding: spacing.xl,
-    alignItems: "center",
-  },
-  header: {
-    alignItems: "center",
-    marginTop: spacing.xxl,
-    marginBottom: spacing.xxl,
-    width: "100%",
-  },
-  logoBox: {
-    width: 72,
-    height: 72,
-    borderRadius: radius.xl,
-    backgroundColor: colors.surfaceSoft,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: spacing.xl,
-  },
-  logoHeart: {
-    color: colors.primary,
-    fontSize: 42,
-  },
-  title: {
-    color: colors.heading,
-    fontSize: 28,
-    fontWeight: "800",
-    textAlign: "center",
-    marginBottom: spacing.md,
-  },
-  subtitle: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 24,
-    textAlign: "center",
-    maxWidth: 340,
-  },
-  card: {
-    width: "100%",
-    maxWidth: 440,
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    padding: spacing.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: spacing.lg,
-  },
-  cardTitle: {
-    color: colors.heading,
-    fontSize: 20,
+
+  loadingBrand: {
+    color: C.white,
+    fontFamily: serif,
+    fontSize: 30,
     fontWeight: "700",
-    marginBottom: spacing.xl,
   },
-  label: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    marginBottom: spacing.xs,
+
+  loadingText: {
+    color: C.muted,
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: "center",
   },
-  value: {
-    color: colors.text,
-    fontSize: 16,
+
+  scrollContent: {
+    flexGrow: 1,
+    alignItems: "center",
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 35,
+  },
+
+  wrapper: {
+    width: "100%",
+    maxWidth: 620,
+  },
+
+  // Background decorations
+  topGlow: {
+    position: "absolute",
+    top: -140,
+    left: -130,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: "#074239",
+    opacity: 0.6,
+  },
+
+  goldenArch: {
+    position: "absolute",
+    top: 35,
+    left: 0,
+    right: 0,
+    height: 385,
+    borderTopLeftRadius: 280,
+    borderTopRightRadius: 280,
+    borderTopWidth: 1.5,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: "rgba(231,189,121,0.35)",
+  },
+
+  // Header
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    paddingBottom: 22,
+    zIndex: 2,
+  },
+
+  menuButton: {
+    width: 44,
+    height: 44,
+    borderWidth: 1.5,
+    borderColor: C.gold,
+    borderRadius: 13,
+    backgroundColor: C.surfaceDark,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  menuIcon: {
+    color: C.gold,
+    fontSize: 24,
+  },
+
+  brandGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+
+  brandHeart: {
+    color: C.gold,
+    fontSize: 32,
+  },
+
+  brandName: {
+    fontFamily: serif,
+    color: C.white,
+    fontSize: 23,
+    fontWeight: "700",
+  },
+
+  brandGold: {
+    color: C.gold,
+  },
+
+  smallAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: C.emerald,
+    borderWidth: 1.5,
+    borderColor: C.gold,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  smallAvatarText: {
+    color: C.white,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+
+  // Account menu
+  menuPanel: {
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    marginBottom: 12,
+  },
+
+  menuLink: {
+    paddingVertical: 14,
+  },
+
+  menuLinkText: {
+    color: C.white,
+    fontSize: 14,
     fontWeight: "600",
   },
-  divider: {
+
+  menuDivider: {
     height: 1,
-    backgroundColor: colors.border,
-    marginVertical: spacing.lg,
+    backgroundColor: C.border,
+    opacity: 0.5,
   },
-  status: {
-    color: colors.success,
+
+  logoutText: {
+    color: C.goldLight,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  // Decorative heading
+  ornamentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    marginBottom: 20,
+  },
+
+  ornamentLine: {
+    width: 35,
+    height: 1,
+    backgroundColor: C.gold,
+  },
+
+  ornament: {
+    color: C.gold,
+    fontSize: 24,
+  },
+
+  // Greeting
+  greeting: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 17,
+    marginBottom: 25,
+  },
+
+  largeAvatar: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    backgroundColor: "#17483C",
+    borderWidth: 2,
+    borderColor: C.gold,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  largeAvatarText: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: C.goldLight,
+  },
+
+  greetingText: {
+    flex: 1,
+    gap: 4,
+  },
+
+  salaam: {
+    color: C.white,
+    fontFamily: serif,
+    fontSize: 17,
+  },
+
+  userName: {
+    color: C.goldLight,
+    fontFamily: serif,
+    fontSize: 28,
+    fontWeight: "700",
+    lineHeight: 35,
+  },
+
+  greetingSubtitle: {
+    color: C.muted,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+
+  // Profile setup card
+  profileCard: {
+    backgroundColor: C.panel,
+    borderWidth: 1.5,
+    borderColor: C.emeraldBright,
+    borderRadius: 22,
+    padding: 19,
+    marginBottom: 30,
+    gap: 19,
+  },
+
+  profileCardTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 15,
+  },
+
+  profileCardIcon: {
+    width: 61,
+    height: 61,
+    borderRadius: 17,
+    backgroundColor: "#17483C",
+    borderWidth: 1,
+    borderColor: C.gold,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  profileIconText: {
+    color: C.gold,
+    fontSize: 36,
+  },
+
+  profileCardText: {
+    flex: 1,
+    gap: 7,
+  },
+
+  profileCardTitle: {
+    color: C.white,
+    fontFamily: serif,
+    fontSize: 22,
+    fontWeight: "700",
+  },
+
+  profileCardDescription: {
+    color: C.muted,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+
+  profileButton: {
+    minHeight: 49,
+    backgroundColor: C.emerald,
+    borderWidth: 1.5,
+    borderColor: C.emeraldBright,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  profileButtonText: {
+    color: C.white,
     fontSize: 15,
+    fontWeight: "800",
+  },
+
+  // Section headings
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+    marginTop: 2,
+  },
+
+  sectionTitle: {
+    color: C.goldLight,
+    fontFamily: serif,
+    fontSize: 25,
     fontWeight: "700",
+    flexShrink: 1,
   },
-  infoCard: {
-    width: "100%",
-    maxWidth: 440,
-    padding: spacing.xl,
-    borderRadius: radius.xl,
-    backgroundColor: colors.surfaceSoft,
-    marginBottom: spacing.xl,
+
+  sectionOrnament: {
+    color: C.gold,
+    fontSize: 26,
   },
-  infoTitle: {
-    color: colors.heading,
-    fontSize: 18,
+
+  // Quick Action Grid
+  quickGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 34,
+  },
+
+  quickCard: {
+    width: "48%",
+    minHeight: 160,
+    backgroundColor: C.surface,
+    borderWidth: 1.5,
+    borderColor: C.gold,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+
+  quickCardFeatured: {
+    backgroundColor: "#06493C",
+    borderColor: C.emeraldBright,
+  },
+
+  quickIconCircle: {
+    width: 53,
+    height: 53,
+    borderRadius: 27,
+    backgroundColor: "#16483F",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  quickIcon: {
+    color: C.gold,
+    fontSize: 34,
+    lineHeight: 42,
+  },
+
+  quickTitle: {
+    fontFamily: serif,
+    color: C.white,
+    fontSize: 20,
     fontWeight: "700",
-    marginBottom: spacing.sm,
+    textAlign: "center",
   },
-  infoText: {
-    color: colors.textSecondary,
+
+  quickDescription: {
+    color: C.muted,
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: "center",
+  },
+
+  // Discover section
+  discoverCard: {
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 23,
+    padding: 24,
+    alignItems: "center",
+    marginBottom: 31,
+    gap: 13,
+  },
+
+  discoverIconCircle: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: "#12443A",
+    borderWidth: 1,
+    borderColor: C.gold,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  discoverIcon: {
+    color: C.goldLight,
+    fontSize: 51,
+    lineHeight: 60,
+  },
+
+  discoverTitle: {
+    color: C.white,
+    fontFamily: serif,
+    fontSize: 23,
+    fontWeight: "700",
+    textAlign: "center",
+    lineHeight: 31,
+  },
+
+  discoverDescription: {
+    color: C.muted,
     fontSize: 14,
     lineHeight: 23,
-  },
-  action: {
-    width: "100%",
+    textAlign: "center",
     maxWidth: 440,
-    marginTop: spacing.md,
   },
-  error: {
-    color: colors.error,
-    fontSize: 14,
+
+  discoverDivider: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginVertical: 5,
+  },
+
+  discoverLine: {
+    width: 60,
+    height: 1,
+    backgroundColor: C.gold,
+  },
+
+  discoverHeart: {
+    color: C.gold,
+    fontSize: 25,
+  },
+
+  primaryButton: {
+    width: "100%",
+    minHeight: 57,
+    backgroundColor: C.emerald,
+    borderWidth: 2,
+    borderColor: C.emeraldBright,
+    borderRadius: 35,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+
+  primaryButtonText: {
+    color: C.white,
+    fontSize: 18,
+    fontWeight: "800",
     textAlign: "center",
-    marginVertical: spacing.md,
   },
-  footer: {
-    color: colors.textSecondary,
+
+  // Account details
+  accountCard: {
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 22,
+  },
+
+  accountRow: {
+    gap: 7,
+    paddingVertical: 5,
+  },
+
+  accountLabel: {
+    color: C.muted,
     fontSize: 12,
-    marginTop: spacing.xxl,
+  },
+
+  accountValue: {
+    color: C.white,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+
+  accountStatus: {
+    color: C.success,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  accountDivider: {
+    height: 1,
+    backgroundColor: C.border,
+    opacity: 0.5,
+    marginVertical: 14,
+  },
+
+  accountLink: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 7,
+  },
+
+  accountLinkText: {
+    color: C.goldLight,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  accountLinkArrow: {
+    color: C.gold,
+    fontSize: 23,
+  },
+
+  // Logout
+  logoutButton: {
+    width: "100%",
+    minHeight: 53,
+    borderWidth: 1.5,
+    borderColor: C.gold,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  logoutButtonText: {
+    color: C.goldLight,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+
+  pressed: {
+    opacity: 0.72,
+  },
+
+  errorText: {
+    color: C.error,
+    fontSize: 13,
+    lineHeight: 21,
     textAlign: "center",
+    marginBottom: 15,
+  },
+
+  footer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingTop: 30,
+  },
+
+  footerHeart: {
+    color: C.gold,
+    fontSize: 20,
+  },
+
+  footerText: {
+    color: C.muted,
+    fontSize: 12,
+  },
+
+  // Fixed Bottom Navigation
+  bottomNavOuter: {
+    backgroundColor: C.surfaceDark,
+    borderTopWidth: 1.5,
+    borderTopColor: C.gold,
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    paddingBottom: 5,
+    alignItems: "center",
+  },
+
+  bottomNav: {
+    width: "100%",
+    maxWidth: 620,
+    flexDirection: "row",
+    gap: 4,
+    justifyContent: "space-around",
+  },
+
+  bottomItem: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 7,
+    borderRadius: 17,
+    gap: 3,
+  },
+
+  bottomItemActive: {
+    backgroundColor: C.emerald,
+    borderWidth: 1,
+    borderColor: C.emeraldBright,
+  },
+
+  bottomIcon: {
+    color: C.muted,
+    fontSize: 27,
+    lineHeight: 32,
+  },
+
+  bottomIconActive: {
+    color: C.goldLight,
+  },
+
+  bottomLabel: {
+    color: C.muted,
+    fontSize: 11,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
+  bottomLabelActive: {
+    color: C.white,
+    fontWeight: "800",
   },
 });

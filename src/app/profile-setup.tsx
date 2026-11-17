@@ -13,20 +13,90 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { AppButton } from "@/components/ui/AppButton";
 import { supabase } from "@/lib/supabase";
-import { theme } from "@/theme/tokens";
 
-const { colors, spacing, radius } = theme;
+// Same premium colors used throughout Rishta App.
+const C = {
+  bg: "#05151D",
+  surface: "#102A30",
+  surfaceDark: "#08252C",
+  emerald: "#086B54",
+  emeraldBright: "#12D894",
+  gold: "#E7BD79",
+  goldLight: "#FFE2AB",
+  white: "#F8FBF9",
+  muted: "#B1C1C7",
+  border: "#42736F",
+  error: "#FF9F9F",
+  success: "#7BF0C3",
+};
+
+const serif = Platform.select({
+  ios: "Georgia",
+  android: "serif",
+  default: "Georgia",
+});
 
 const genderOptions = ["Male", "Female", "Prefer not to say"];
 
 const maritalOptions = ["Never Married", "Divorced", "Widowed", "Separated"];
 
+type ActionButtonProps = {
+  title: string;
+  onPress: () => void;
+  loading?: boolean;
+  disabled?: boolean;
+  secondary?: boolean;
+};
+
+function ActionButton({
+  title,
+  onPress,
+  loading = false,
+  disabled = false,
+  secondary = false,
+}: ActionButtonProps) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={loading || disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.actionButton,
+        secondary && styles.secondaryButton,
+        (pressed || loading || disabled) && styles.buttonPressed,
+      ]}
+    >
+      {loading ? (
+        <ActivityIndicator color={secondary ? C.gold : C.white} size="small" />
+      ) : null}
+
+      <Text
+        style={[
+          styles.actionButtonText,
+          secondary && styles.secondaryButtonText,
+        ]}
+      >
+        {title}
+      </Text>
+    </Pressable>
+  );
+}
+
+function ReviewRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.reviewRow}>
+      <Text style={styles.reviewLabel}>{label}</Text>
+      <Text style={styles.reviewValue}>{value}</Text>
+    </View>
+  );
+}
+
 export default function ProfileSetupScreen() {
   const router = useRouter();
 
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [authenticated, setAuthenticated] = useState(false);
   const [authError, setAuthError] = useState("");
 
   const [fullName, setFullName] = useState("");
@@ -44,6 +114,7 @@ export default function ProfileSetupScreen() {
   const [saveError, setSaveError] = useState("");
   const [saved, setSaved] = useState(false);
 
+  // Load the current user and any saved basic details.
   useEffect(() => {
     let active = true;
 
@@ -53,27 +124,32 @@ export default function ProfileSetupScreen() {
 
         if (!active) return;
 
-        if (userError) {
-          setAuthError("Unable to verify your account. Please try again.");
-          return;
-        }
+        if (userError || !data.user) {
+          if (
+            userError &&
+            !["session_not_found", "bad_jwt"].includes(userError.code ?? "")
+          ) {
+            setAuthError("Unable to verify your account. Please try again.");
+            return;
+          }
 
-        if (!data.user) {
           router.replace("/login");
           return;
         }
 
-        const savedName = data.user.user_metadata?.full_name;
+        const user = data.user;
+
+        const savedName = user.user_metadata?.full_name;
 
         if (typeof savedName === "string") {
           setFullName(savedName);
         }
-        // PASTE NEW CODE HERE
 
+        // Read only the logged-in user's profile.
         const { data: existingProfile, error: profileError } = await supabase
           .from("rishta_profiles")
           .select("full_name, gender, date_of_birth, city, marital_status")
-          .eq("user_id", data.user.id)
+          .eq("user_id", user.id)
           .maybeSingle();
 
         if (!active) return;
@@ -84,18 +160,22 @@ export default function ProfileSetupScreen() {
         }
 
         if (existingProfile) {
-          setFullName(existingProfile.full_name);
-          setGender(existingProfile.gender);
-          setCity(existingProfile.city);
-          setMaritalStatus(existingProfile.marital_status);
+          setFullName(existingProfile.full_name ?? "");
+          setGender(existingProfile.gender ?? "");
+          setCity(existingProfile.city ?? "");
+          setMaritalStatus(existingProfile.marital_status ?? "");
 
-          const [savedYear, savedMonth, savedDay] =
-            existingProfile.date_of_birth.split("-");
+          if (existingProfile.date_of_birth) {
+            const [savedYear, savedMonth, savedDay] =
+              existingProfile.date_of_birth.split("-");
 
-          setYear(savedYear);
-          setMonth(savedMonth);
-          setDay(savedDay);
+            setYear(savedYear ?? "");
+            setMonth(savedMonth ?? "");
+            setDay(savedDay ?? "");
+          }
         }
+
+        setAuthenticated(true);
       } catch {
         if (active) {
           setAuthError(
@@ -103,14 +183,19 @@ export default function ProfileSetupScreen() {
           );
         }
       } finally {
-        if (active) setCheckingAuth(false);
+        if (active) {
+          setCheckingAuth(false);
+        }
       }
     }
 
     void checkUser();
 
     const { data: listener } = supabase.auth.onAuthStateChange((event) => {
+      if (!active) return;
+
       if (event === "SIGNED_OUT") {
+        setAuthenticated(false);
         router.replace("/login");
       }
     });
@@ -121,6 +206,7 @@ export default function ProfileSetupScreen() {
     };
   }, [router]);
 
+  // Validate basic information before showing review.
   function handleContinue() {
     setError("");
     setSaveError("");
@@ -201,6 +287,7 @@ export default function ProfileSetupScreen() {
     setPreview(true);
   }
 
+  // Save the reviewed profile to Supabase.
   async function handleSaveProfile() {
     if (savingProfile || saved) return;
 
@@ -208,14 +295,15 @@ export default function ProfileSetupScreen() {
     setSavingProfile(true);
 
     try {
-      const { data, error: authError } = await supabase.auth.getUser();
+      const { data, error: userError } = await supabase.auth.getUser();
 
-      if (authError || !data.user) {
+      if (userError || !data.user) {
         setSaveError("Please sign in again.");
         return;
       }
 
-      const formattedDate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+      const formattedDate =
+        `${year}-${month.padStart(2, "0")}` + `-${day.padStart(2, "0")}`;
 
       const { error: databaseError } = await supabase
         .from("rishta_profiles")
@@ -229,7 +317,9 @@ export default function ProfileSetupScreen() {
             marital_status: maritalStatus,
             updated_at: new Date().toISOString(),
           },
-          { onConflict: "user_id" },
+          {
+            onConflict: "user_id",
+          },
         );
 
       if (databaseError) {
@@ -245,27 +335,46 @@ export default function ProfileSetupScreen() {
     }
   }
 
+  function handleBack() {
+    if (preview) {
+      setPreview(false);
+      setError("");
+    } else {
+      router.replace("/dashboard");
+    }
+  }
+
+  // Loading screen.
   if (checkingAuth) {
     return (
       <SafeAreaView style={styles.centered}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingHeart}>♡</Text>
 
-        <Text style={styles.subtitle}>Checking your account...</Text>
+        <ActivityIndicator size="large" color={C.emeraldBright} />
+
+        <Text style={styles.loadingText}>Loading your profile...</Text>
       </SafeAreaView>
     );
   }
 
-  if (authError) {
+  // Authentication or database error.
+  if (authError || !authenticated) {
     return (
       <SafeAreaView style={styles.centered}>
-        <Text style={styles.error}>{authError}</Text>
+        <Text style={styles.loadingHeart}>♡</Text>
 
-        <View style={styles.buttonArea}>
-          <AppButton
-            title="Back to Dashboard"
-            onPress={() => router.replace("/dashboard")}
-          />
-        </View>
+        <Text style={styles.errorText}>{authError || "Opening login..."}</Text>
+
+        {authError ? (
+          <View style={styles.centeredButton}>
+            <ActionButton
+              title="Back to Dashboard →"
+              onPress={() => router.replace("/dashboard")}
+            />
+          </View>
+        ) : (
+          <ActivityIndicator color={C.emeraldBright} />
+        )}
       </SafeAreaView>
     );
   }
@@ -282,34 +391,55 @@ export default function ProfileSetupScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.content}>
-            <Pressable
-              style={styles.backButton}
-              onPress={() => {
-                if (preview) {
-                  setPreview(false);
-                } else {
-                  router.replace("/dashboard");
-                }
-              }}
-            >
-              <Text style={styles.backText}>
-                ← {preview ? "Edit Information" : "Dashboard"}
-              </Text>
-            </Pressable>
+            {/* Background decoration */}
+            <View pointerEvents="none" style={styles.topGlow} />
 
-            <View style={styles.progressHeader}>
-              <Text style={styles.stepText}>STEP 1 OF 4</Text>
+            <View pointerEvents="none" style={styles.goldArch} />
 
-              <Text style={styles.percentage}>25%</Text>
+            {/* Top navigation */}
+            <View style={styles.topBar}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={handleBack}
+                style={styles.backButton}
+              >
+                <Text style={styles.backArrow}>←</Text>
+              </Pressable>
+
+              <View style={styles.brandRow}>
+                <Text style={styles.brandHeart}>♡</Text>
+
+                <Text style={styles.brandName}>
+                  Rishta <Text style={styles.brandGold}>App</Text>
+                </Text>
+              </View>
+
+              <Text style={styles.stepBadge}>1 / 4</Text>
             </View>
 
-            <View style={styles.progressTrack}>
-              <View style={styles.progressFill} />
+            {/* Progress */}
+            <View style={styles.progressSection}>
+              <View style={styles.progressHeader}>
+                <Text style={styles.progressLabel}>PROFILE SETUP</Text>
+
+                <Text style={styles.progressText}>STEP 1 OF 4</Text>
+              </View>
+
+              <View style={styles.progressTrack}>
+                <View style={styles.progressFill} />
+              </View>
+
+              <Text style={styles.progressNote}>Basic Information</Text>
             </View>
 
-            <View style={styles.header}>
-              <View style={styles.iconBox}>
-                <Text style={styles.iconText}>♥</Text>
+            {/* Heading */}
+            <View style={styles.hero}>
+              <View style={styles.ornamentRow}>
+                <View style={styles.ornamentLine} />
+
+                <Text style={styles.ornament}>✦ ❦ ✦</Text>
+
+                <View style={styles.ornamentLine} />
               </View>
 
               <Text style={styles.title}>
@@ -318,211 +448,343 @@ export default function ProfileSetupScreen() {
 
               <Text style={styles.subtitle}>
                 {preview
-                  ? "Please review your details before proceeding."
-                  : "Let's start with a few details about you."}
+                  ? "Please review your details before saving your profile."
+                  : "Let's begin with a few important details about you."}
               </Text>
+
+              <View style={styles.heartDivider}>
+                <View style={styles.dividerLine} />
+
+                <Text style={styles.dividerHeart}>♡</Text>
+
+                <View style={styles.dividerLine} />
+              </View>
             </View>
 
-            {preview ? (
-              <View style={styles.formCard}>
-                <Text style={styles.sectionTitle}>Your Details</Text>
+            {/* Main form card */}
+            <View style={styles.formCard}>
+              {preview ? (
+                <>
+                  <View style={styles.cardHeading}>
+                    <Text style={styles.cardHeadingIcon}>♡</Text>
 
-                <Text style={styles.reviewLabel}>Full Name</Text>
-                <Text style={styles.reviewValue}>{fullName}</Text>
+                    <View style={styles.cardHeadingText}>
+                      <Text style={styles.sectionTitle}>Your Details</Text>
 
-                <Text style={styles.reviewLabel}>Gender</Text>
-                <Text style={styles.reviewValue}>{gender}</Text>
+                      <Text style={styles.sectionSubtitle}>
+                        Confirm everything is correct.
+                      </Text>
+                    </View>
+                  </View>
 
-                <Text style={styles.reviewLabel}>Date of Birth</Text>
-                <Text style={styles.reviewValue}>
-                  {day.padStart(2, "0")}/{month.padStart(2, "0")}/{year}
-                </Text>
+                  <View style={styles.reviewCard}>
+                    <ReviewRow label="Full Name" value={fullName} />
 
-                <Text style={styles.reviewLabel}>City</Text>
-                <Text style={styles.reviewValue}>{city}</Text>
+                    <View style={styles.reviewDivider} />
 
-                <Text style={styles.reviewLabel}>Marital Status</Text>
-                <Text style={styles.reviewValue}>{maritalStatus}</Text>
+                    <ReviewRow label="Gender" value={gender} />
 
-                <View style={styles.noteBox}>
-                  <Text style={styles.noteText}>
-                    {saved
-                      ? "Your profile information has been saved securely."
-                      : "Please review your details and click Save Profile to continue."}
-                  </Text>
-                </View>
+                    <View style={styles.reviewDivider} />
 
-                {saveError ? (
-                  <Text style={styles.error}>{saveError}</Text>
-                ) : null}
+                    <ReviewRow
+                      label="Date of Birth"
+                      value={
+                        `${day.padStart(2, "0")}/` +
+                        `${month.padStart(2, "0")}/` +
+                        year
+                      }
+                    />
 
-                {saved ? (
-                  <Text style={{ color: colors.success, marginTop: 16 }}>
-                    Your profile has been saved successfully!
-                  </Text>
-                ) : null}
+                    <View style={styles.reviewDivider} />
 
-                <View style={styles.buttonArea}>
-                  <AppButton
-                    title={saved ? "Profile Saved" : "Save Profile"}
-                    onPress={handleSaveProfile}
-                    loading={savingProfile}
-                    disabled={savingProfile || saved}
-                  />
-                </View>
+                    <ReviewRow label="City" value={city} />
 
-                {saved ? (
-                  <View style={styles.buttonArea}>
-                    <AppButton
-                      title="Continue to Step 2"
+                    <View style={styles.reviewDivider} />
+
+                    <ReviewRow label="Marital Status" value={maritalStatus} />
+                  </View>
+
+                  {/* Save note */}
+                  <View style={styles.noteBox}>
+                    <Text style={styles.noteIcon}>♡</Text>
+
+                    <Text style={styles.noteText}>
+                      {saved
+                        ? "Your basic information has been saved."
+                        : "Review your details carefully before saving."}
+                    </Text>
+                  </View>
+
+                  {/* Save error */}
+                  {saveError ? (
+                    <View style={styles.errorBox}>
+                      <Text style={styles.errorText} accessibilityRole="alert">
+                        {saveError}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {/* Success */}
+                  {saved ? (
+                    <View style={styles.successBox}>
+                      <Text style={styles.successIcon}>✓</Text>
+
+                      <Text style={styles.successText}>
+                        Profile saved successfully!
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {/* Save button */}
+                  {!saved ? (
+                    <ActionButton
+                      title={
+                        savingProfile ? "Saving Profile..." : "Save Profile  →"
+                      }
+                      onPress={() => void handleSaveProfile()}
+                      loading={savingProfile}
+                      disabled={savingProfile}
+                    />
+                  ) : (
+                    <ActionButton
+                      title="Continue to Step 2  →"
                       onPress={() => router.push("/profile-details")}
                     />
-                  </View>
-                ) : null}
+                  )}
 
-                <View style={styles.buttonArea}>
-                  <AppButton
+                  <ActionButton
                     title="Edit Details"
-                    onPress={() => setPreview(false)}
+                    secondary
+                    onPress={() => {
+                      setPreview(false);
+                      setError("");
+                    }}
                   />
-                </View>
-              </View>
-            ) : (
-              <View style={styles.formCard}>
-                <Text style={styles.sectionTitle}>About You</Text>
+                </>
+              ) : (
+                <>
+                  <View style={styles.cardHeading}>
+                    <Text style={styles.cardHeadingIcon}>♙</Text>
 
-                <Text style={styles.label}>Full Name *</Text>
+                    <View style={styles.cardHeadingText}>
+                      <Text style={styles.sectionTitle}>About You</Text>
 
-                <TextInput
-                  style={styles.input}
-                  value={fullName}
-                  onChangeText={setFullName}
-                  placeholder="Enter your full name"
-                  placeholderTextColor={colors.textSecondary}
-                  autoCapitalize="words"
-                  autoComplete="name"
-                />
-
-                <Text style={styles.label}>Gender *</Text>
-
-                <View style={styles.optionsContainer}>
-                  {genderOptions.map((option) => (
-                    <Pressable
-                      key={option}
-                      style={[
-                        styles.option,
-                        gender === option && styles.optionSelected,
-                      ]}
-                      onPress={() => setGender(option)}
-                      accessibilityRole="radio"
-                      accessibilityState={{
-                        checked: gender === option,
-                      }}
-                    >
-                      <Text
-                        style={[
-                          styles.optionText,
-                          gender === option && styles.optionTextSelected,
-                        ]}
-                      >
-                        {option}
+                      <Text style={styles.sectionSubtitle}>
+                        All fields marked * are required.
                       </Text>
-                    </Pressable>
-                  ))}
-                </View>
+                    </View>
+                  </View>
 
-                <Text style={styles.label}>Date of Birth *</Text>
+                  {/* Full Name */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>
+                      Full Name <Text style={styles.required}>*</Text>
+                    </Text>
 
-                <View style={styles.dateRow}>
-                  <TextInput
-                    style={styles.dateInput}
-                    placeholder="DD"
-                    placeholderTextColor={colors.textSecondary}
-                    keyboardType="number-pad"
-                    maxLength={2}
-                    value={day}
-                    onChangeText={setDay}
-                  />
+                    <View style={styles.inputContainer}>
+                      <Text style={styles.fieldIcon}>♙</Text>
 
-                  <TextInput
-                    style={styles.dateInput}
-                    placeholder="MM"
-                    placeholderTextColor={colors.textSecondary}
-                    keyboardType="number-pad"
-                    maxLength={2}
-                    value={month}
-                    onChangeText={setMonth}
-                  />
+                      <TextInput
+                        style={styles.input}
+                        value={fullName}
+                        onChangeText={setFullName}
+                        placeholder="Enter your full name"
+                        placeholderTextColor={C.muted}
+                        autoCapitalize="words"
+                        autoComplete="name"
+                        accessibilityLabel="Full name"
+                      />
+                    </View>
+                  </View>
 
-                  <TextInput
-                    style={styles.yearInput}
-                    placeholder="YYYY"
-                    placeholderTextColor={colors.textSecondary}
-                    keyboardType="number-pad"
-                    maxLength={4}
-                    value={year}
-                    onChangeText={setYear}
-                  />
-                </View>
+                  {/* Gender */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>
+                      Gender <Text style={styles.required}>*</Text>
+                    </Text>
 
-                <Text style={styles.helper}>
-                  You must be 18 years or older.
+                    <View style={styles.optionsContainer}>
+                      {genderOptions.map((option) => {
+                        const selected = gender === option;
+
+                        return (
+                          <Pressable
+                            key={option}
+                            accessibilityRole="radio"
+                            accessibilityState={{
+                              checked: selected,
+                            }}
+                            onPress={() => setGender(option)}
+                            style={[
+                              styles.option,
+                              selected && styles.optionSelected,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.optionText,
+                                selected && styles.optionTextSelected,
+                              ]}
+                            >
+                              {selected ? "✓  " : ""}
+                              {option}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </View>
+
+                  {/* Date of Birth */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>
+                      Date of Birth <Text style={styles.required}>*</Text>
+                    </Text>
+
+                    <View style={styles.dateRow}>
+                      <View style={styles.dateField}>
+                        <Text style={styles.dateLabel}>DAY</Text>
+
+                        <TextInput
+                          style={styles.dateInput}
+                          placeholder="DD"
+                          placeholderTextColor={C.muted}
+                          keyboardType="number-pad"
+                          maxLength={2}
+                          value={day}
+                          onChangeText={setDay}
+                          accessibilityLabel="Birth day"
+                        />
+                      </View>
+
+                      <View style={styles.dateField}>
+                        <Text style={styles.dateLabel}>MONTH</Text>
+
+                        <TextInput
+                          style={styles.dateInput}
+                          placeholder="MM"
+                          placeholderTextColor={C.muted}
+                          keyboardType="number-pad"
+                          maxLength={2}
+                          value={month}
+                          onChangeText={setMonth}
+                          accessibilityLabel="Birth month"
+                        />
+                      </View>
+
+                      <View style={[styles.dateField, styles.yearField]}>
+                        <Text style={styles.dateLabel}>YEAR</Text>
+
+                        <TextInput
+                          style={styles.dateInput}
+                          placeholder="YYYY"
+                          placeholderTextColor={C.muted}
+                          keyboardType="number-pad"
+                          maxLength={4}
+                          value={year}
+                          onChangeText={setYear}
+                          accessibilityLabel="Birth year"
+                        />
+                      </View>
+                    </View>
+
+                    <Text style={styles.helper}>
+                      You must be at least 18 years old.
+                    </Text>
+                  </View>
+
+                  {/* City */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>
+                      City <Text style={styles.required}>*</Text>
+                    </Text>
+
+                    <View style={styles.inputContainer}>
+                      <Text style={styles.fieldIcon}>◇</Text>
+
+                      <TextInput
+                        style={styles.input}
+                        value={city}
+                        onChangeText={setCity}
+                        placeholder="Skardu, Lahore, Karachi..."
+                        placeholderTextColor={C.muted}
+                        autoCapitalize="words"
+                        accessibilityLabel="City"
+                      />
+                    </View>
+                  </View>
+
+                  {/* Marital Status */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>
+                      Marital Status <Text style={styles.required}>*</Text>
+                    </Text>
+
+                    <View style={styles.optionsContainer}>
+                      {maritalOptions.map((option) => {
+                        const selected = maritalStatus === option;
+
+                        return (
+                          <Pressable
+                            key={option}
+                            accessibilityRole="radio"
+                            accessibilityState={{
+                              checked: selected,
+                            }}
+                            onPress={() => setMaritalStatus(option)}
+                            style={[
+                              styles.option,
+                              selected && styles.optionSelected,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.optionText,
+                                selected && styles.optionTextSelected,
+                              ]}
+                            >
+                              {selected ? "✓  " : ""}
+                              {option}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </View>
+
+                  {/* Validation error */}
+                  {error ? (
+                    <View style={styles.errorBox}>
+                      <Text style={styles.errorText} accessibilityRole="alert">
+                        {error}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {/* Continue to review */}
+                  <ActionButton title="Continue  →" onPress={handleContinue} />
+                </>
+              )}
+            </View>
+
+            {/* Footer */}
+            <View style={styles.footer}>
+              <View style={styles.footerRow}>
+                <Text style={styles.footerHeart}>♡</Text>
+
+                <Text style={styles.footerText}>
+                  Review your information before saving
                 </Text>
-
-                <Text style={styles.label}>City *</Text>
-
-                <TextInput
-                  style={styles.input}
-                  value={city}
-                  onChangeText={setCity}
-                  placeholder="e.g. Skardu, Lahore, Karachi"
-                  placeholderTextColor={colors.textSecondary}
-                  autoCapitalize="words"
-                />
-
-                <Text style={styles.label}>Marital Status *</Text>
-
-                <View style={styles.optionsContainer}>
-                  {maritalOptions.map((option) => (
-                    <Pressable
-                      key={option}
-                      style={[
-                        styles.option,
-                        maritalStatus === option && styles.optionSelected,
-                      ]}
-                      onPress={() => setMaritalStatus(option)}
-                      accessibilityRole="radio"
-                      accessibilityState={{
-                        checked: maritalStatus === option,
-                      }}
-                    >
-                      <Text
-                        style={[
-                          styles.optionText,
-                          maritalStatus === option && styles.optionTextSelected,
-                        ]}
-                      >
-                        {option}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-
-                {error ? (
-                  <Text style={styles.error} accessibilityRole="alert">
-                    {error}
-                  </Text>
-                ) : null}
-
-                <View style={styles.buttonArea}>
-                  <AppButton title="Continue" onPress={handleContinue} />
-                </View>
               </View>
-            )}
 
-            <Text style={styles.footer}>
-              Your personal information will be protected with privacy controls.
-            </Text>
+              <View style={styles.footerOrnament}>
+                <View style={styles.footerLine} />
+
+                <Text style={styles.footerFlower}>❦</Text>
+
+                <View style={styles.footerLine} />
+              </View>
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -533,220 +795,585 @@ export default function ProfileSetupScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: C.bg,
   },
+
   centered: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: C.bg,
     justifyContent: "center",
     alignItems: "center",
-    padding: spacing.xl,
-    gap: spacing.lg,
+    padding: 24,
+    gap: 20,
   },
+
+  centeredButton: {
+    width: "100%",
+    maxWidth: 300,
+  },
+
+  loadingHeart: {
+    color: C.gold,
+    fontSize: 55,
+  },
+
+  loadingText: {
+    color: C.muted,
+    fontSize: 14,
+    textAlign: "center",
+  },
+
   scrollContent: {
     flexGrow: 1,
     alignItems: "center",
-    padding: spacing.xl,
+    paddingHorizontal: 18,
+    paddingVertical: 20,
   },
+
   content: {
     width: "100%",
-    maxWidth: 520,
+    maxWidth: 600,
+    paddingBottom: 20,
   },
+
+  // Background
+  topGlow: {
+    position: "absolute",
+    top: -115,
+    left: -135,
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    backgroundColor: "#074239",
+    opacity: 0.6,
+  },
+
+  goldArch: {
+    position: "absolute",
+    top: 20,
+    left: 0,
+    right: 0,
+    height: 460,
+    borderTopLeftRadius: 260,
+    borderTopRightRadius: 260,
+    borderTopWidth: 1.5,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: "rgba(231,189,121,0.35)",
+  },
+
+  // Header
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginBottom: 27,
+  },
+
   backButton: {
-    alignSelf: "flex-start",
-    paddingVertical: spacing.md,
-    marginBottom: spacing.xl,
+    width: 44,
+    height: 44,
+    borderWidth: 1.5,
+    borderColor: C.gold,
+    borderRadius: 13,
+    backgroundColor: C.surfaceDark,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  backText: {
-    color: colors.primary,
-    fontSize: 14,
-    fontWeight: "600",
+
+  backArrow: {
+    color: C.gold,
+    fontSize: 27,
+    lineHeight: 33,
   },
+
+  brandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+
+  brandHeart: {
+    color: C.gold,
+    fontSize: 29,
+  },
+
+  brandName: {
+    color: C.white,
+    fontFamily: serif,
+    fontSize: 22,
+    fontWeight: "700",
+  },
+
+  brandGold: {
+    color: C.gold,
+  },
+
+  stepBadge: {
+    color: C.goldLight,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.gold,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 12,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  // Progress
+  progressSection: {
+    marginBottom: 28,
+  },
+
   progressHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: spacing.sm,
+    marginBottom: 12,
   },
-  stepText: {
-    color: colors.primary,
-    fontSize: 12,
+
+  progressLabel: {
+    color: C.gold,
+    fontSize: 11,
     fontWeight: "800",
-    letterSpacing: 1,
+    letterSpacing: 1.5,
   },
-  percentage: {
-    color: colors.textSecondary,
-    fontSize: 12,
+
+  progressText: {
+    color: C.white,
+    fontSize: 11,
     fontWeight: "700",
   },
+
   progressTrack: {
-    height: 6,
-    backgroundColor: colors.surfaceSoft,
-    borderRadius: radius.full,
+    height: 8,
+    backgroundColor: C.surface,
+    borderRadius: 10,
     overflow: "hidden",
-    marginBottom: spacing.xxxl,
+    borderWidth: 1,
+    borderColor: C.border,
   },
+
   progressFill: {
     width: "25%",
     height: "100%",
-    backgroundColor: colors.primary,
-    borderRadius: radius.full,
+    backgroundColor: C.emeraldBright,
+    borderRadius: 10,
   },
-  header: {
+
+  progressNote: {
+    color: C.muted,
+    fontSize: 12,
+    marginTop: 10,
+    textAlign: "right",
+  },
+
+  // Hero
+  hero: {
     alignItems: "center",
-    marginBottom: spacing.xxxl,
+    paddingBottom: 30,
   },
-  iconBox: {
-    width: 70,
-    height: 70,
-    borderRadius: radius.xl,
-    backgroundColor: colors.surfaceSoft,
-    justifyContent: "center",
+
+  ornamentRow: {
+    flexDirection: "row",
     alignItems: "center",
-    marginBottom: spacing.lg,
+    gap: 11,
+    marginBottom: 15,
   },
-  iconText: {
-    color: colors.primary,
-    fontSize: 42,
+
+  ornamentLine: {
+    width: 30,
+    height: 1,
+    backgroundColor: C.gold,
   },
+
+  ornament: {
+    color: C.gold,
+    fontSize: 21,
+  },
+
   title: {
-    color: colors.heading,
-    fontSize: 28,
-    fontWeight: "800",
-    textAlign: "center",
-    marginBottom: spacing.md,
-  },
-  subtitle: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 24,
-    textAlign: "center",
-  },
-  formCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.xl,
-    padding: spacing.xl,
-  },
-  sectionTitle: {
-    color: colors.heading,
-    fontSize: 20,
+    color: C.goldLight,
+    fontFamily: serif,
+    fontSize: 35,
+    lineHeight: 44,
     fontWeight: "700",
-    marginBottom: spacing.xl,
+    textAlign: "center",
   },
+
+  subtitle: {
+    color: C.white,
+    fontFamily: serif,
+    fontSize: 15,
+    lineHeight: 25,
+    textAlign: "center",
+    marginTop: 12,
+    maxWidth: 400,
+  },
+
+  heartDivider: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 13,
+    marginTop: 20,
+  },
+
+  dividerLine: {
+    width: 65,
+    height: 1,
+    backgroundColor: C.gold,
+  },
+
+  dividerHeart: {
+    color: C.goldLight,
+    fontSize: 32,
+  },
+
+  // Main card
+  formCard: {
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 24,
+    padding: 20,
+    gap: 25,
+    shadowColor: "#000000",
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 3,
+  },
+
+  cardHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingBottom: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+
+  cardHeadingIcon: {
+    width: 44,
+    height: 44,
+    textAlign: "center",
+    textAlignVertical: "center",
+    color: C.gold,
+    fontSize: 28,
+    backgroundColor: C.surfaceDark,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+
+  cardHeadingText: {
+    flex: 1,
+    gap: 5,
+  },
+
+  sectionTitle: {
+    color: C.white,
+    fontFamily: serif,
+    fontSize: 23,
+    fontWeight: "700",
+  },
+
+  sectionSubtitle: {
+    color: C.muted,
+    fontSize: 12,
+    lineHeight: 19,
+  },
+
+  // Fields
+  fieldGroup: {
+    gap: 11,
+  },
+
   label: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: spacing.sm,
+    color: C.goldLight,
+    fontSize: 15,
+    fontWeight: "700",
   },
+
+  required: {
+    color: C.gold,
+  },
+
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 56,
+    backgroundColor: C.surfaceDark,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    borderRadius: 13,
+    paddingLeft: 14,
+  },
+
+  fieldIcon: {
+    color: C.gold,
+    fontSize: 23,
+    width: 29,
+    marginRight: 9,
+    textAlign: "center",
+  },
+
   input: {
-    minHeight: 54,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.lg,
-    color: colors.text,
-    fontSize: 16,
-    backgroundColor: colors.background,
-    marginBottom: spacing.xl,
-  },
-  optionsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    marginBottom: spacing.xl,
-  },
-  option: {
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.full,
-    backgroundColor: colors.surface,
-  },
-  optionSelected: {
-    backgroundColor: colors.surfaceSoft,
-    borderColor: colors.primary,
-  },
-  optionText: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  optionTextSelected: {
-    color: colors.primary,
-  },
-  dateRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  dateInput: {
     flex: 1,
     minWidth: 0,
     minHeight: 54,
-    textAlign: "center",
+    paddingRight: 12,
+    paddingVertical: 10,
+    color: C.white,
+    fontSize: 15,
+  },
+
+  // Option chips
+  optionsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 9,
+  },
+
+  option: {
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    backgroundColor: colors.background,
-    color: colors.text,
-    fontSize: 16,
+    borderColor: C.border,
+    backgroundColor: C.surfaceDark,
+    borderRadius: 22,
+    paddingVertical: 12,
+    paddingHorizontal: 15,
   },
-  yearInput: {
-    flex: 1.5,
-    minWidth: 0,
-    minHeight: 54,
-    textAlign: "center",
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    backgroundColor: colors.background,
-    color: colors.text,
-    fontSize: 16,
+
+  optionSelected: {
+    borderColor: C.emeraldBright,
+    backgroundColor: "#07473A",
   },
-  helper: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    marginTop: spacing.sm,
-    marginBottom: spacing.xl,
-  },
-  buttonArea: {
-    marginTop: spacing.lg,
-  },
-  error: {
-    color: colors.error,
+
+  optionText: {
+    color: C.muted,
     fontSize: 13,
-    lineHeight: 21,
-    marginTop: spacing.md,
-  },
-  reviewLabel: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    marginBottom: spacing.xs,
-  },
-  reviewValue: {
-    color: colors.text,
-    fontSize: 16,
     fontWeight: "600",
-    marginBottom: spacing.lg,
   },
+
+  optionTextSelected: {
+    color: C.white,
+    fontWeight: "800",
+  },
+
+  // Date of Birth
+  dateRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+
+  dateField: {
+    flex: 1,
+    minWidth: 0,
+    gap: 8,
+  },
+
+  yearField: {
+    flex: 1.35,
+  },
+
+  dateLabel: {
+    color: C.muted,
+    fontSize: 10,
+    letterSpacing: 1,
+    fontWeight: "700",
+  },
+
+  dateInput: {
+    minHeight: 56,
+    backgroundColor: C.surfaceDark,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    borderRadius: 13,
+    color: C.white,
+    textAlign: "center",
+    fontSize: 16,
+    paddingHorizontal: 5,
+  },
+
+  helper: {
+    color: C.muted,
+    fontSize: 12,
+    lineHeight: 19,
+  },
+
+  // Buttons
+  actionButton: {
+    minHeight: 60,
+    width: "100%",
+    backgroundColor: C.emerald,
+    borderWidth: 2,
+    borderColor: C.emeraldBright,
+    borderRadius: 32,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingHorizontal: 10,
+  },
+
+  actionButtonText: {
+    color: C.white,
+    fontSize: 18,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+
+  secondaryButton: {
+    backgroundColor: "transparent",
+    borderColor: C.gold,
+  },
+
+  secondaryButtonText: {
+    color: C.goldLight,
+  },
+
+  buttonPressed: {
+    opacity: 0.7,
+  },
+
+  // Review
+  reviewCard: {
+    backgroundColor: C.surfaceDark,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 16,
+    padding: 17,
+  },
+
+  reviewRow: {
+    gap: 8,
+    paddingVertical: 8,
+  },
+
+  reviewLabel: {
+    color: C.muted,
+    fontSize: 12,
+  },
+
+  reviewValue: {
+    color: C.white,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+
+  reviewDivider: {
+    height: 1,
+    backgroundColor: C.border,
+    opacity: 0.5,
+    marginVertical: 9,
+  },
+
+  // Notes
   noteBox: {
-    backgroundColor: colors.surfaceSoft,
-    padding: spacing.lg,
-    borderRadius: radius.md,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    backgroundColor: C.surfaceDark,
   },
+
+  noteIcon: {
+    color: C.gold,
+    fontSize: 25,
+  },
+
   noteText: {
-    color: colors.textSecondary,
+    flex: 1,
+    color: C.muted,
     fontSize: 13,
     lineHeight: 21,
   },
-  footer: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    lineHeight: 20,
+
+  // Errors
+  errorBox: {
+    backgroundColor: "#30252A",
+    borderWidth: 1,
+    borderColor: "#B75A64",
+    borderRadius: 12,
+    padding: 14,
+  },
+
+  errorText: {
+    color: C.error,
+    fontSize: 13,
+    lineHeight: 21,
     textAlign: "center",
-    marginTop: spacing.xxl,
-    marginBottom: spacing.xl,
+  },
+
+  // Success
+  successBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderColor: C.emeraldBright,
+    backgroundColor: "#083E31",
+    borderRadius: 12,
+    padding: 14,
+  },
+
+  successIcon: {
+    color: C.success,
+    fontSize: 22,
+    fontWeight: "800",
+  },
+
+  successText: {
+    color: C.success,
+    fontSize: 14,
+    fontWeight: "700",
+    flex: 1,
+  },
+
+  // Footer
+  footer: {
+    alignItems: "center",
+    paddingTop: 32,
+    gap: 24,
+  },
+
+  footerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  footerHeart: {
+    color: C.gold,
+    fontSize: 24,
+  },
+
+  footerText: {
+    color: C.muted,
+    fontSize: 12,
+    textAlign: "center",
+  },
+
+  footerOrnament: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+
+  footerLine: {
+    width: 70,
+    height: 1,
+    backgroundColor: C.gold,
+  },
+
+  footerFlower: {
+    color: C.gold,
+    fontSize: 25,
   },
 });

@@ -13,11 +13,29 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { AppButton } from "@/components/ui/AppButton";
 import { supabase } from "@/lib/supabase";
-import { theme } from "@/theme/tokens";
 
-const { colors, spacing, radius } = theme;
+// Same premium colors as Step 1 and Dashboard.
+const C = {
+  bg: "#05151D",
+  surface: "#102A30",
+  surfaceDark: "#08252C",
+  emerald: "#086B54",
+  emeraldBright: "#12D894",
+  gold: "#E7BD79",
+  goldLight: "#FFE2AB",
+  white: "#F8FBF9",
+  muted: "#B1C1C7",
+  border: "#42736F",
+  error: "#FF9F9F",
+  success: "#7BF0C3",
+};
+
+const serif = Platform.select({
+  ios: "Georgia",
+  android: "serif",
+  default: "Georgia",
+});
 
 const educationOptions = [
   "Matric / SSC",
@@ -48,24 +66,120 @@ const sectOptions = [
   "Prefer not to say",
 ];
 
+type ChoiceGroupProps = {
+  options: string[];
+  selected: string;
+  onSelect: (value: string) => void;
+  disabled?: boolean;
+};
+
+function ChoiceGroup({
+  options,
+  selected,
+  onSelect,
+  disabled = false,
+}: ChoiceGroupProps) {
+  return (
+    <View style={styles.optionsContainer}>
+      {options.map((option) => {
+        const isSelected = selected === option;
+
+        return (
+          <Pressable
+            key={option}
+            accessibilityRole="radio"
+            accessibilityState={{
+              checked: isSelected,
+              disabled,
+            }}
+            disabled={disabled}
+            onPress={() => onSelect(option)}
+            style={({ pressed }) => [
+              styles.option,
+              isSelected && styles.optionSelected,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text
+              style={[
+                styles.optionText,
+                isSelected && styles.optionTextSelected,
+              ]}
+            >
+              {isSelected ? "✓  " : ""}
+              {option}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+type ActionButtonProps = {
+  title: string;
+  onPress: () => void;
+  loading?: boolean;
+  disabled?: boolean;
+  secondary?: boolean;
+};
+
+function ActionButton({
+  title,
+  onPress,
+  loading = false,
+  disabled = false,
+  secondary = false,
+}: ActionButtonProps) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      disabled={loading || disabled}
+      style={({ pressed }) => [
+        styles.primaryButton,
+        secondary && styles.secondaryButton,
+        (pressed || loading || disabled) && styles.pressed,
+      ]}
+    >
+      {loading ? (
+        <ActivityIndicator size="small" color={secondary ? C.gold : C.white} />
+      ) : null}
+
+      <Text
+        style={[
+          styles.primaryButtonText,
+          secondary && styles.secondaryButtonText,
+        ]}
+      >
+        {title}
+      </Text>
+    </Pressable>
+  );
+}
+
 export default function ProfileDetailsScreen() {
   const router = useRouter();
 
   const [checking, setChecking] = useState(true);
+  const [authenticated, setAuthenticated] = useState(false);
+
   const [loading, setLoading] = useState(false);
+
   const [education, setEducation] = useState("");
   const [profession, setProfession] = useState("");
   const [height, setHeight] = useState("");
   const [religion, setReligion] = useState("");
-
   const [muslimSect, setMuslimSect] = useState("");
-
   const [familyOverview, setFamilyOverview] = useState("");
 
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [saved, setSaved] = useState(false);
 
+  const [highestStep, setHighestStep] = useState(1);
+
+  // Load current user and saved profile.
   useEffect(() => {
     let active = true;
 
@@ -75,12 +189,15 @@ export default function ProfileDetailsScreen() {
 
         if (!active) return;
 
-        if (authError) {
-          setError("Unable to verify your account.");
-          return;
-        }
+        if (authError || !data.user) {
+          if (
+            authError &&
+            !["session_not_found", "bad_jwt"].includes(authError.code ?? "")
+          ) {
+            setError("Unable to verify your account. Please try again.");
+            return;
+          }
 
-        if (!data.user) {
           router.replace("/login");
           return;
         }
@@ -107,6 +224,7 @@ export default function ProfileDetailsScreen() {
 
         setEducation(profile.education_level ?? "");
         setProfession(profile.profession ?? "");
+
         setHeight(profile.height_cm != null ? String(profile.height_cm) : "");
 
         const savedReligion = profile.faith_category ?? profile.religion ?? "";
@@ -118,20 +236,31 @@ export default function ProfileDetailsScreen() {
         setMuslimSect(profile.muslim_sect ?? "");
 
         setFamilyOverview(profile.family_overview ?? "");
-        setSaved(profile.profile_step >= 2);
+
+        const completedStep =
+          typeof profile.profile_step === "number" ? profile.profile_step : 1;
+
+        setHighestStep(completedStep);
+        setSaved(completedStep >= 2);
+        setAuthenticated(true);
       } catch {
         if (active) {
           setError("Unable to load profile. Please try again.");
         }
       } finally {
-        if (active) setChecking(false);
+        if (active) {
+          setChecking(false);
+        }
       }
     }
 
     void loadProfile();
 
     const { data: listener } = supabase.auth.onAuthStateChange((event) => {
+      if (!active) return;
+
       if (event === "SIGNED_OUT") {
+        setAuthenticated(false);
         router.replace("/login");
       }
     });
@@ -142,8 +271,16 @@ export default function ProfileDetailsScreen() {
     };
   }, [router]);
 
+  // Reset save status when a field changes.
+  function markUnsaved() {
+    setSaved(false);
+    setMessage("");
+    setError("");
+  }
+
+  // Validate and save to Supabase.
   async function handleSave() {
-    if (loading) return;
+    if (loading || !authenticated) return;
 
     setError("");
     setMessage("");
@@ -153,12 +290,15 @@ export default function ProfileDetailsScreen() {
       return;
     }
 
-    if (profession.trim().length < 2 || profession.trim().length > 100) {
+    const cleanProfession = profession.trim();
+
+    if (cleanProfession.length < 2 || cleanProfession.length > 100) {
       setError("Please enter a valid profession.");
       return;
     }
 
     const trimmedHeight = height.trim();
+
     const heightValue = trimmedHeight ? Number(trimmedHeight) : null;
 
     if (
@@ -195,11 +335,15 @@ export default function ProfileDetailsScreen() {
         return;
       }
 
+      // Never reduce progress if a later
+      // profile step has already been completed.
+      const nextStep = Math.max(highestStep, 2);
+
       const { data: updated, error: saveError } = await supabase
         .from("rishta_profiles")
         .update({
           education_level: education,
-          profession: profession.trim(),
+          profession: cleanProfession,
           height_cm: heightValue,
 
           religion:
@@ -212,7 +356,7 @@ export default function ProfileDetailsScreen() {
           muslim_sect: cleanReligion === "Muslim" ? muslimSect || null : null,
 
           family_overview: cleanFamily || null,
-          profile_step: 2,
+          profile_step: nextStep,
           updated_at: new Date().toISOString(),
         })
         .eq("user_id", data.user.id)
@@ -229,7 +373,9 @@ export default function ProfileDetailsScreen() {
         return;
       }
 
+      setHighestStep(nextStep);
       setSaved(true);
+
       setMessage("Personal & Family Details saved successfully!");
     } catch {
       setError("Unable to save details. Please try again.");
@@ -238,11 +384,44 @@ export default function ProfileDetailsScreen() {
     }
   }
 
+  const stepProgress = saved ? "50%" : "25%";
+
+  // Loading state
   if (checking) {
     return (
       <SafeAreaView style={styles.centered}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={styles.subtitle}>Loading your profile...</Text>
+        <Text style={styles.loadingHeart}>♡</Text>
+
+        <Text style={styles.loadingBrand}>
+          Rishta <Text style={styles.brandGold}>App</Text>
+        </Text>
+
+        <ActivityIndicator size="large" color={C.emeraldBright} />
+
+        <Text style={styles.loadingText}>Loading your profile...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!authenticated) {
+    return (
+      <SafeAreaView style={styles.centered}>
+        <Text style={styles.loadingHeart}>♡</Text>
+
+        <Text style={styles.errorText} accessibilityRole="alert">
+          {error || "Opening login..."}
+        </Text>
+
+        {error ? (
+          <View style={styles.errorAction}>
+            <ActionButton
+              title="Back to Dashboard →"
+              onPress={() => router.replace("/dashboard")}
+            />
+          </View>
+        ) : (
+          <ActivityIndicator color={C.emeraldBright} />
+        )}
       </SafeAreaView>
     );
   }
@@ -254,34 +433,66 @@ export default function ProfileDetailsScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.wrapper}>
-            <Pressable
-              onPress={() => router.replace("/profile-setup")}
-              style={styles.backButton}
-            >
-              <Text style={styles.backText}>← Basic Information</Text>
-            </Pressable>
+            {/* Decorative background */}
+            <View pointerEvents="none" style={styles.topGlow} />
 
-            <View style={styles.progressHeader}>
-              <Text style={styles.stepText}>STEP 2 OF 4</Text>
-              <Text style={styles.progressText}>
-                {saved ? "50% Complete" : "In Progress"}
+            <View pointerEvents="none" style={styles.goldArch} />
+
+            {/* Top Header */}
+            <View style={styles.topBar}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Back to Basic Information"
+                onPress={() => router.replace("/profile-setup")}
+                style={({ pressed }) => [
+                  styles.backButton,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={styles.backArrow}>←</Text>
+              </Pressable>
+
+              <View style={styles.brandRow}>
+                <Text style={styles.brandHeart}>♡</Text>
+
+                <Text style={styles.brandName}>
+                  Rishta <Text style={styles.brandGold}>App</Text>
+                </Text>
+              </View>
+
+              <Text style={styles.stepBadge}>2 / 4</Text>
+            </View>
+
+            {/* Progress Bar */}
+            <View style={styles.progressSection}>
+              <View style={styles.progressHeader}>
+                <Text style={styles.progressLabel}>PROFILE SETUP</Text>
+
+                <Text style={styles.progressText}>STEP 2 OF 4</Text>
+              </View>
+
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: stepProgress }]} />
+              </View>
+
+              <Text style={styles.progressNote}>
+                {saved ? "Step 2 Saved" : "Personal & Family Details"}
               </Text>
             </View>
 
-            <View style={styles.progressTrack}>
-              <View
-                style={[styles.progressFill, { width: saved ? "50%" : "25%" }]}
-              />
-            </View>
+            {/* Page Hero */}
+            <View style={styles.hero}>
+              <View style={styles.ornamentRow}>
+                <View style={styles.ornamentLine} />
 
-            <View style={styles.header}>
-              <View style={styles.iconBox}>
-                <Text style={styles.heart}>♥</Text>
+                <Text style={styles.ornament}>✦ ❦ ✦</Text>
+
+                <View style={styles.ornamentLine} />
               </View>
 
               <Text style={styles.title}>Personal & Family Details</Text>
@@ -289,200 +500,307 @@ export default function ProfileDetailsScreen() {
               <Text style={styles.subtitle}>
                 Share a little more about yourself and your background.
               </Text>
+
+              <View style={styles.heartDivider}>
+                <View style={styles.dividerLine} />
+
+                <Text style={styles.dividerHeart}>♡</Text>
+
+                <View style={styles.dividerLine} />
+              </View>
             </View>
 
+            {/* Education & Career Card */}
             <View style={styles.card}>
-              <Text style={styles.sectionTitle}>Education & Career</Text>
+              <View style={styles.cardHeading}>
+                <View style={styles.cardHeadingIcon}>
+                  <Text style={styles.cardIconText}>✦</Text>
+                </View>
 
-              <Text style={styles.label}>Highest Education *</Text>
+                <View style={styles.cardHeadingText}>
+                  <Text style={styles.sectionTitle}>Education & Career</Text>
 
-              <View style={styles.optionsContainer}>
-                {educationOptions.map((option) => (
-                  <Pressable
-                    key={option}
-                    onPress={() => {
-                      setEducation(option);
-                      setSaved(false);
-                      setMessage("");
-                    }}
-                    style={[
-                      styles.option,
-                      education === option && styles.optionSelected,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.optionText,
-                        education === option && styles.optionTextSelected,
-                      ]}
-                    >
-                      {option}
-                    </Text>
-                  </Pressable>
-                ))}
+                  <Text style={styles.sectionSubtitle}>
+                    Tell us about your academic and professional background.
+                  </Text>
+                </View>
               </View>
 
-              <Text style={styles.label}>Profession *</Text>
-
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Software Engineer, Teacher, Student"
-                placeholderTextColor={colors.textSecondary}
-                value={profession}
-                onChangeText={(value) => {
-                  setProfession(value);
-                  setSaved(false);
-                  setMessage("");
-                }}
-                maxLength={100}
-                autoCapitalize="words"
-              />
-
-              <Text style={styles.label}>Height (cm) — Optional</Text>
-
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. 170"
-                placeholderTextColor={colors.textSecondary}
-                keyboardType="number-pad"
-                maxLength={3}
-                value={height}
-                onChangeText={(value) => {
-                  setHeight(value);
-                  setSaved(false);
-                  setMessage("");
-                }}
-              />
-
-              <View style={styles.divider} />
-
-              <Text style={styles.sectionTitle}>
-                Personal & Family Background
-              </Text>
-
-              <Text style={styles.label}>Religion — Optional</Text>
-
-              <View style={styles.optionsContainer}>
-                {religionOptions.map((option) => (
-                  <Pressable
-                    key={option}
-                    style={[
-                      styles.option,
-                      religion === option && styles.optionSelected,
-                    ]}
-                    onPress={() => {
-                      setReligion(option);
-                      setMuslimSect("");
-                      setSaved(false);
-                      setMessage("");
-                    }}
-                  >
-                    <Text
-                      style={[
-                        styles.optionText,
-                        religion === option && styles.optionTextSelected,
-                      ]}
-                    >
-                      {option}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              {religion === "Muslim" ? (
-                <>
-                  <Text style={styles.label}>Firqa / Sect — Optional</Text>
-
-                  <View style={styles.optionsContainer}>
-                    {sectOptions.map((option) => (
-                      <Pressable
-                        key={option}
-                        style={[
-                          styles.option,
-                          muslimSect === option && styles.optionSelected,
-                        ]}
-                        onPress={() => {
-                          setMuslimSect(option);
-                          setSaved(false);
-                          setMessage("");
-                        }}
-                      >
-                        <Text
-                          style={[
-                            styles.optionText,
-                            muslimSect === option && styles.optionTextSelected,
-                          ]}
-                        >
-                          {option}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </>
-              ) : null}
-
-              <Text style={styles.helper}>
-                Religion and sect are optional and remain private. You can
-                choose whether to share them in discovery later.
-              </Text>
-
-              <Text style={styles.label}>About Your Family — Optional</Text>
-
-              <TextInput
-                style={[styles.input, styles.textarea]}
-                placeholder="Tell us a little about your family..."
-                placeholderTextColor={colors.textSecondary}
-                value={familyOverview}
-                onChangeText={(value) => {
-                  setFamilyOverview(value);
-                  setSaved(false);
-                  setMessage("");
-                }}
-                multiline
-                maxLength={600}
-                textAlignVertical="top"
-              />
-
-              <Text style={styles.helper}>
-                Avoid sharing phone numbers, home addresses, or other private
-                contact details here.
-              </Text>
-
-              {error ? (
-                <Text style={styles.error} accessibilityRole="alert">
-                  {error}
+              {/* Education */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.label}>
+                  Highest Education <Text style={styles.required}>*</Text>
                 </Text>
-              ) : null}
 
-              {message ? (
-                <Text style={styles.success} accessibilityRole="alert">
-                  {message}
-                </Text>
-              ) : null}
-
-              <View style={styles.buttonArea}>
-                <AppButton
-                  title={saved ? "Save Changes" : "Save & Continue"}
-                  onPress={handleSave}
-                  loading={loading}
+                <ChoiceGroup
+                  options={educationOptions}
+                  selected={education}
                   disabled={loading}
+                  onSelect={(value) => {
+                    setEducation(value);
+                    markUnsaved();
+                  }}
                 />
               </View>
 
-              {saved ? (
-                <View style={styles.buttonArea}>
-                  <AppButton
-                    title="Continue to Step 3"
-                    onPress={() => router.push("/partner-preferences")}
+              {/* Profession */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.label}>
+                  Profession <Text style={styles.required}>*</Text>
+                </Text>
+
+                <View style={styles.inputContainer}>
+                  <Text style={styles.fieldIcon}>♙</Text>
+
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Software Engineer, Teacher..."
+                    placeholderTextColor={C.muted}
+                    value={profession}
+                    onChangeText={(value) => {
+                      setProfession(value);
+                      markUnsaved();
+                    }}
+                    editable={!loading}
+                    maxLength={100}
+                    autoCapitalize="words"
+                    accessibilityLabel="Profession"
+                  />
+                </View>
+
+                <Text style={styles.helper}>
+                  Enter your current profession or occupation.
+                </Text>
+              </View>
+
+              {/* Height */}
+              <View style={styles.fieldGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.label}>Height</Text>
+
+                  <Text style={styles.optionalBadge}>OPTIONAL</Text>
+                </View>
+
+                <View style={styles.inputContainer}>
+                  <Text style={styles.fieldIcon}>◇</Text>
+
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. 170"
+                    placeholderTextColor={C.muted}
+                    keyboardType="number-pad"
+                    maxLength={3}
+                    value={height}
+                    onChangeText={(value) => {
+                      setHeight(value);
+                      markUnsaved();
+                    }}
+                    editable={!loading}
+                    accessibilityLabel="Height in centimeters"
+                  />
+
+                  <Text style={styles.inputSuffix}>cm</Text>
+                </View>
+
+                <Text style={styles.helper}>
+                  Height can be between 100 and 230 cm.
+                </Text>
+              </View>
+            </View>
+
+            {/* Family Background Card */}
+            <View style={styles.card}>
+              <View style={styles.cardHeading}>
+                <View style={styles.cardHeadingIcon}>
+                  <Text style={styles.cardIconText}>♡</Text>
+                </View>
+
+                <View style={styles.cardHeadingText}>
+                  <Text style={styles.sectionTitle}>Personal & Family</Text>
+
+                  <Text style={styles.sectionSubtitle}>
+                    Background and family introduction.
+                  </Text>
+                </View>
+              </View>
+
+              {/* Religion */}
+              <View style={styles.fieldGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.label}>Religion</Text>
+
+                  <Text style={styles.optionalBadge}>OPTIONAL</Text>
+                </View>
+
+                <ChoiceGroup
+                  options={religionOptions}
+                  selected={religion}
+                  disabled={loading}
+                  onSelect={(value) => {
+                    setReligion(value);
+                    setMuslimSect("");
+                    markUnsaved();
+                  }}
+                />
+              </View>
+
+              {/* Firqa / Sect */}
+              {religion === "Muslim" ? (
+                <View style={styles.fieldGroup}>
+                  <View style={styles.labelRow}>
+                    <Text style={styles.label}>Firqa / Sect</Text>
+
+                    <Text style={styles.optionalBadge}>OPTIONAL</Text>
+                  </View>
+
+                  <ChoiceGroup
+                    options={sectOptions}
+                    selected={muslimSect}
+                    disabled={loading}
+                    onSelect={(value) => {
+                      setMuslimSect(value);
+                      markUnsaved();
+                    }}
                   />
                 </View>
               ) : null}
+
+              {/* Privacy Information */}
+              <View style={styles.privacyNote}>
+                <Text style={styles.privacyNoteIcon}>♡</Text>
+
+                <Text style={styles.privacyNoteText}>
+                  Religion and sect are optional. You can manage their
+                  visibility in your discovery privacy settings.
+                </Text>
+              </View>
+
+              {/* Family Overview */}
+              <View style={styles.fieldGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.label}>About Your Family</Text>
+
+                  <Text style={styles.optionalBadge}>OPTIONAL</Text>
+                </View>
+
+                <View style={styles.textareaContainer}>
+                  <TextInput
+                    style={styles.textarea}
+                    placeholder="Tell us a little about your family, values and background..."
+                    placeholderTextColor={C.muted}
+                    value={familyOverview}
+                    onChangeText={(value) => {
+                      setFamilyOverview(value);
+                      markUnsaved();
+                    }}
+                    editable={!loading}
+                    multiline
+                    maxLength={600}
+                    textAlignVertical="top"
+                    accessibilityLabel="About your family"
+                  />
+                </View>
+
+                <Text style={styles.characterCount}>
+                  {familyOverview.length}/600
+                </Text>
+
+                <Text style={styles.helper}>
+                  Avoid sharing phone numbers, home addresses or private contact
+                  details here.
+                </Text>
+              </View>
             </View>
 
-            <Text style={styles.footer}>
-              Your details remain private under your account's security
-              settings.
-            </Text>
+            {/* Save / Continue Card */}
+            <View style={styles.actionCard}>
+              <View style={styles.actionCardHeader}>
+                <Text style={styles.actionCardHeart}>♡</Text>
+
+                <View style={styles.actionCardText}>
+                  <Text style={styles.actionCardTitle}>
+                    {saved ? "Step 2 Completed" : "Save Your Details"}
+                  </Text>
+
+                  <Text style={styles.actionCardDescription}>
+                    {saved
+                      ? "Your details have been saved. You can continue to the next step."
+                      : "Save your information to continue building your profile."}
+                  </Text>
+                </View>
+              </View>
+
+              {error ? (
+                <View style={styles.errorBox}>
+                  <Text style={styles.errorIcon}>!</Text>
+
+                  <Text style={styles.errorText} accessibilityRole="alert">
+                    {error}
+                  </Text>
+                </View>
+              ) : null}
+
+              {message ? (
+                <View style={styles.successBox}>
+                  <Text style={styles.successIcon}>✓</Text>
+
+                  <Text style={styles.successText} accessibilityRole="alert">
+                    {message}
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* Save button */}
+              <ActionButton
+                title={
+                  loading
+                    ? "Saving..."
+                    : saved
+                      ? "Save Changes"
+                      : "Save & Continue  →"
+                }
+                onPress={() => void handleSave()}
+                loading={loading}
+              />
+
+              {/* Go to Step 3 */}
+              {saved ? (
+                <ActionButton
+                  title="Continue to Step 3  →"
+                  onPress={() => router.push("/partner-preferences")}
+                  secondary
+                />
+              ) : null}
+
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.replace("/profile-setup")}
+                style={styles.backLink}
+              >
+                <Text style={styles.backLinkText}>
+                  ← Back to Basic Information
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* Footer */}
+            <View style={styles.footer}>
+              <View style={styles.footerRow}>
+                <Text style={styles.footerHeart}>♡</Text>
+
+                <Text style={styles.footerText}>
+                  Your privacy matters to us
+                </Text>
+              </View>
+
+              <View style={styles.footerOrnament}>
+                <View style={styles.footerLine} />
+
+                <Text style={styles.footerFlower}>❦</Text>
+
+                <View style={styles.footerLine} />
+              </View>
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -493,180 +811,648 @@ export default function ProfileDetailsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: C.bg,
   },
+
   centered: {
     flex: 1,
+    backgroundColor: C.bg,
+    alignItems: "center",
     justifyContent: "center",
-    alignItems: "center",
-    gap: spacing.lg,
-    backgroundColor: colors.background,
+    padding: 24,
+    gap: 18,
   },
-  content: {
+
+  errorAction: {
+    width: "100%",
+    maxWidth: 320,
+    marginTop: 15,
+  },
+
+  loadingHeart: {
+    color: C.gold,
+    fontSize: 55,
+  },
+
+  loadingBrand: {
+    fontFamily: serif,
+    fontSize: 30,
+    fontWeight: "700",
+    color: C.white,
+  },
+
+  brandGold: {
+    color: C.gold,
+  },
+
+  loadingText: {
+    color: C.muted,
+    fontSize: 14,
+    textAlign: "center",
+  },
+
+  scrollContent: {
     flexGrow: 1,
-    padding: spacing.xl,
     alignItems: "center",
+    paddingHorizontal: 18,
+    paddingTop: 20,
+    paddingBottom: 35,
   },
+
   wrapper: {
     width: "100%",
-    maxWidth: 520,
+    maxWidth: 600,
   },
+
+  // Background decorations
+  topGlow: {
+    position: "absolute",
+    top: -120,
+    left: -130,
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    backgroundColor: "#074239",
+    opacity: 0.6,
+  },
+
+  goldArch: {
+    position: "absolute",
+    top: 20,
+    left: 0,
+    right: 0,
+    height: 460,
+    borderTopLeftRadius: 260,
+    borderTopRightRadius: 260,
+    borderTopWidth: 1.5,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: "rgba(231,189,121,0.35)",
+  },
+
+  // Header
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginBottom: 27,
+  },
+
   backButton: {
-    paddingVertical: spacing.md,
-    alignSelf: "flex-start",
-    marginBottom: spacing.xl,
+    width: 44,
+    height: 44,
+    borderWidth: 1.5,
+    borderColor: C.gold,
+    borderRadius: 13,
+    backgroundColor: C.surfaceDark,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  backText: {
-    color: colors.primary,
-    fontSize: 14,
-    fontWeight: "600",
+
+  backArrow: {
+    color: C.gold,
+    fontSize: 27,
+    lineHeight: 33,
   },
+
+  brandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+
+  brandHeart: {
+    color: C.gold,
+    fontSize: 29,
+  },
+
+  brandName: {
+    color: C.white,
+    fontFamily: serif,
+    fontSize: 22,
+    fontWeight: "700",
+  },
+
+  stepBadge: {
+    color: C.goldLight,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.gold,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 12,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  // Progress
+  progressSection: {
+    marginBottom: 28,
+  },
+
   progressHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: spacing.sm,
+    marginBottom: 12,
   },
-  stepText: {
-    color: colors.primary,
-    fontSize: 12,
+
+  progressLabel: {
+    color: C.gold,
+    fontSize: 11,
     fontWeight: "800",
-    letterSpacing: 1,
+    letterSpacing: 1.5,
   },
+
   progressText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "600",
+    color: C.white,
+    fontSize: 11,
+    fontWeight: "700",
   },
+
   progressTrack: {
-    height: 6,
-    backgroundColor: colors.surfaceSoft,
-    borderRadius: radius.full,
+    height: 8,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 10,
     overflow: "hidden",
-    marginBottom: spacing.xxxl,
   },
+
   progressFill: {
     height: "100%",
-    backgroundColor: colors.primary,
-    borderRadius: radius.full,
+    backgroundColor: C.emeraldBright,
+    borderRadius: 10,
   },
-  header: {
+
+  progressNote: {
+    color: C.muted,
+    fontSize: 12,
+    marginTop: 10,
+    textAlign: "right",
+  },
+
+  // Hero
+  hero: {
     alignItems: "center",
-    marginBottom: spacing.xxxl,
+    paddingBottom: 30,
   },
-  iconBox: {
-    width: 72,
-    height: 72,
-    borderRadius: radius.xl,
-    backgroundColor: colors.surfaceSoft,
+
+  ornamentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+    marginBottom: 15,
+  },
+
+  ornamentLine: {
+    width: 30,
+    height: 1,
+    backgroundColor: C.gold,
+  },
+
+  ornament: {
+    color: C.gold,
+    fontSize: 21,
+  },
+
+  title: {
+    color: C.goldLight,
+    fontFamily: serif,
+    fontSize: 35,
+    lineHeight: 44,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+
+  subtitle: {
+    color: C.white,
+    fontFamily: serif,
+    fontSize: 15,
+    lineHeight: 25,
+    textAlign: "center",
+    marginTop: 12,
+    maxWidth: 400,
+  },
+
+  heartDivider: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 13,
+    marginTop: 20,
+  },
+
+  dividerLine: {
+    width: 65,
+    height: 1,
+    backgroundColor: C.gold,
+  },
+
+  dividerHeart: {
+    color: C.goldLight,
+    fontSize: 32,
+  },
+
+  // Cards
+  card: {
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 24,
+    padding: 20,
+    gap: 27,
+    marginBottom: 20,
+    shadowColor: "#000000",
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 3,
+  },
+
+  cardHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+
+  cardHeadingIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: C.surfaceDark,
+    borderWidth: 1,
+    borderColor: C.border,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: spacing.xl,
   },
-  heart: {
-    fontSize: 42,
-    color: colors.primary,
-  },
-  title: {
+
+  cardIconText: {
+    color: C.gold,
     fontSize: 28,
-    fontWeight: "800",
-    color: colors.heading,
-    textAlign: "center",
-    marginBottom: spacing.md,
   },
-  subtitle: {
-    fontSize: 15,
-    color: colors.textSecondary,
-    textAlign: "center",
-    lineHeight: 24,
+
+  cardHeadingText: {
+    flex: 1,
+    gap: 5,
   },
-  card: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.xl,
-    padding: spacing.xl,
-  },
+
   sectionTitle: {
-    fontSize: 20,
+    color: C.white,
+    fontFamily: serif,
+    fontSize: 22,
     fontWeight: "700",
-    color: colors.heading,
-    marginBottom: spacing.xl,
   },
+
+  sectionSubtitle: {
+    color: C.muted,
+    fontSize: 12,
+    lineHeight: 19,
+  },
+
+  // Form fields
+  fieldGroup: {
+    gap: 11,
+  },
+
+  labelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+
   label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.text,
-    marginBottom: spacing.sm,
+    color: C.goldLight,
+    fontSize: 15,
+    fontWeight: "700",
   },
+
+  required: {
+    color: C.gold,
+  },
+
+  optionalBadge: {
+    color: C.muted,
+    fontSize: 10,
+    fontWeight: "700",
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    letterSpacing: 0.4,
+  },
+
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 56,
+    backgroundColor: C.surfaceDark,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    borderRadius: 13,
+    paddingLeft: 14,
+  },
+
+  fieldIcon: {
+    color: C.gold,
+    fontSize: 23,
+    width: 29,
+    marginRight: 9,
+    textAlign: "center",
+  },
+
+  input: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 54,
+    paddingRight: 12,
+    paddingVertical: 10,
+    color: C.white,
+    fontSize: 15,
+  },
+
+  inputSuffix: {
+    color: C.gold,
+    fontSize: 13,
+    fontWeight: "700",
+    paddingRight: 16,
+  },
+
+  helper: {
+    color: C.muted,
+    fontSize: 12,
+    lineHeight: 20,
+  },
+
+  // Selection chips
   optionsContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.sm,
-    marginBottom: spacing.xl,
+    gap: 9,
   },
+
   option: {
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.full,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: C.border,
+    backgroundColor: C.surfaceDark,
+    borderRadius: 22,
+    paddingVertical: 12,
+    paddingHorizontal: 15,
   },
+
   optionSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.surfaceSoft,
+    borderColor: C.emeraldBright,
+    backgroundColor: "#07473A",
   },
+
   optionText: {
+    color: C.muted,
     fontSize: 13,
-    color: colors.textSecondary,
     fontWeight: "600",
   },
+
   optionTextSelected: {
-    color: colors.primary,
+    color: C.white,
+    fontWeight: "800",
   },
-  input: {
-    minHeight: 54,
+
+  pressed: {
+    opacity: 0.7,
+  },
+
+  // Privacy message
+  privacyNote: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    backgroundColor: colors.background,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    fontSize: 16,
-    color: colors.text,
-    marginBottom: spacing.xl,
+    borderColor: C.border,
+    borderRadius: 13,
+    backgroundColor: C.surfaceDark,
+    padding: 14,
   },
-  textarea: {
-    minHeight: 120,
+
+  privacyNoteIcon: {
+    color: C.gold,
+    fontSize: 25,
   },
-  divider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginBottom: spacing.xl,
-  },
-  helper: {
+
+  privacyNoteText: {
+    flex: 1,
+    color: C.muted,
     fontSize: 12,
-    lineHeight: 20,
-    color: colors.textSecondary,
-    marginBottom: spacing.xl,
-  },
-  buttonArea: {
-    marginTop: spacing.lg,
-  },
-  error: {
-    color: colors.error,
-    fontSize: 13,
     lineHeight: 21,
   },
-  success: {
-    color: colors.success,
-    fontSize: 14,
-    lineHeight: 22,
+
+  // Family introduction
+  textareaContainer: {
+    backgroundColor: C.surfaceDark,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    borderRadius: 13,
+    overflow: "hidden",
   },
-  footer: {
-    color: colors.textSecondary,
+
+  textarea: {
+    color: C.white,
+    fontSize: 15,
+    lineHeight: 23,
+    minHeight: 135,
+    paddingHorizontal: 15,
+    paddingVertical: 15,
+  },
+
+  characterCount: {
+    textAlign: "right",
+    color: C.gold,
     fontSize: 12,
-    textAlign: "center",
+    fontWeight: "600",
+  },
+
+  // Save card
+  actionCard: {
+    backgroundColor: C.surface,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    borderRadius: 24,
+    padding: 20,
+    gap: 18,
+  },
+
+  actionCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 13,
+  },
+
+  actionCardHeart: {
+    color: C.gold,
+    fontSize: 39,
+  },
+
+  actionCardText: {
+    flex: 1,
+    gap: 6,
+  },
+
+  actionCardTitle: {
+    color: C.white,
+    fontFamily: serif,
+    fontSize: 23,
+    fontWeight: "700",
+  },
+
+  actionCardDescription: {
+    color: C.muted,
+    fontSize: 12,
     lineHeight: 20,
-    marginVertical: spacing.xxl,
+  },
+
+  // Buttons
+  primaryButton: {
+    minHeight: 60,
+    width: "100%",
+    backgroundColor: C.emerald,
+    borderWidth: 2,
+    borderColor: C.emeraldBright,
+    borderRadius: 32,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingHorizontal: 10,
+  },
+
+  primaryButtonText: {
+    color: C.white,
+    fontSize: 18,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+
+  secondaryButton: {
+    backgroundColor: "transparent",
+    borderColor: C.gold,
+  },
+
+  secondaryButtonText: {
+    color: C.goldLight,
+  },
+
+  backLink: {
+    alignItems: "center",
+    paddingVertical: 11,
+  },
+
+  backLinkText: {
+    color: C.goldLight,
+    fontSize: 14,
+    fontWeight: "700",
+    textDecorationLine: "underline",
+  },
+
+  // Error message
+  errorBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    backgroundColor: "#30252A",
+    borderWidth: 1,
+    borderColor: "#B75A64",
+    borderRadius: 12,
+    padding: 14,
+  },
+
+  errorIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: C.error,
+    color: C.error,
+    textAlign: "center",
+    fontWeight: "800",
+    lineHeight: 20,
+  },
+
+  errorText: {
+    flex: 1,
+    color: C.error,
+    fontSize: 13,
+    lineHeight: 21,
+    textAlign: "center",
+  },
+
+  // Success message
+  successBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#083E31",
+    borderWidth: 1,
+    borderColor: C.emeraldBright,
+    borderRadius: 12,
+    padding: 14,
+  },
+
+  successIcon: {
+    color: C.success,
+    fontSize: 24,
+    fontWeight: "800",
+  },
+
+  successText: {
+    flex: 1,
+    color: C.success,
+    fontSize: 13,
+    lineHeight: 21,
+    fontWeight: "700",
+  },
+
+  // Footer
+  footer: {
+    alignItems: "center",
+    paddingTop: 32,
+    gap: 24,
+  },
+
+  footerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  footerHeart: {
+    color: C.gold,
+    fontSize: 24,
+  },
+
+  footerText: {
+    color: C.muted,
+    fontSize: 12,
+  },
+
+  footerOrnament: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+
+  footerLine: {
+    width: 70,
+    height: 1,
+    backgroundColor: C.gold,
+  },
+
+  footerFlower: {
+    color: C.gold,
+    fontSize: 25,
   },
 });

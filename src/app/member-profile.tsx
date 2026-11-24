@@ -70,9 +70,19 @@ export default function MemberProfileScreen() {
 
   const [sendingInterest, setSendingInterest] = useState(false);
   const [interestSent, setInterestSent] = useState(false);
+
+  const [pendingReceived, setPendingReceived] = useState(false);
+  const [hadPreviousInvitation, setHadPreviousInvitation] = useState(false);
+
   const [interestMessage, setInterestMessage] = useState("");
   const [interestFailed, setInterestFailed] = useState(false);
   const [isOwnProfile, setIsOwnProfile] = useState(false);
+
+  const [blockedByMe, setBlockedByMe] = useState(false);
+  const [blockConfirm, setBlockConfirm] = useState(false);
+  const [blockBusy, setBlockBusy] = useState(false);
+  const [blockFeedback, setBlockFeedback] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -85,6 +95,10 @@ export default function MemberProfileScreen() {
       setPhotoUrls([]);
       setPhotoError("");
       setInterestSent(false);
+
+      setPendingReceived(false);
+      setHadPreviousInvitation(false);
+
       setInterestMessage("");
       setInterestFailed(false);
 
@@ -101,6 +115,36 @@ export default function MemberProfileScreen() {
         if (authError || !authData.user) {
           router.replace("/login");
           return;
+        }
+
+        // Check whether either member has blocked the other.
+        // Private photos must stay locked while blocked.
+        let blockedByMeNow = false;
+
+        if (authData.user.id !== userId) {
+          const { data: blocks, error: blockError } = await supabase
+            .from("rishta_blocks")
+            .select("blocker_id, blocked_id")
+            .or(
+              `and(blocker_id.eq.${authData.user.id},blocked_id.eq.${userId}),and(blocker_id.eq.${userId},blocked_id.eq.${authData.user.id})`,
+            );
+
+          if (!active) return;
+          if (blockError) throw blockError;
+
+          blockedByMeNow = (blocks ?? []).some(
+            (block) => block.blocker_id === authData.user.id,
+          );
+
+          const blockedByOther = (blocks ?? []).some(
+            (block) => block.blocker_id === userId,
+          );
+
+          setBlockedByMe(blockedByMeNow);
+
+          if (blockedByOther && !blockedByMeNow) {
+            throw new Error("This member profile is unavailable.");
+          }
         }
 
         const { data, error: profileError } = await supabase
@@ -123,26 +167,61 @@ export default function MemberProfileScreen() {
         setProfile(data as PublicProfile);
         setIsOwnProfile(data.user_id === authData.user.id);
 
-        // Only an accepted invitation is allowed to trigger a photo lookup.
-        // Storage access must ALSO be restricted by Supabase RLS policies.
-        const { data: invitation, error: invitationError } = await supabase
+        if (blockedByMeNow) {
+          setAcceptedMatch(false);
+          setPhotoUrls([]);
+          setPhotoError("Photos are locked while this member is blocked.");
+          return;
+        }
+
+        // Check invitations in both directions.
+        // Only pending or accepted invitations are active.
+        // Cancelled and declined invitations remain history.
+
+        const { data: pairInvitations, error: invitationError } = await supabase
           .from("rishta_invitations")
-          .select("id")
-          .eq("status", "accepted")
+          .select("id, sender_id, status, created_at")
           .or(
             `and(sender_id.eq.${authData.user.id},receiver_id.eq.${data.user_id}),and(receiver_id.eq.${authData.user.id},sender_id.eq.${data.user_id})`,
           )
-          .limit(1)
-          .maybeSingle();
+          .order("created_at", { ascending: false })
+          .limit(100);
 
         if (!active) return;
 
         if (invitationError) {
-          setPhotoError("Unable to verify match status.");
+          throw invitationError;
+        }
+
+        const rows = pairInvitations ?? [];
+
+        // Check previous cancelled or declined invitations.
+        setHadPreviousInvitation(
+          rows.some(
+            (item) => item.status === "cancelled" || item.status === "declined",
+          ),
+        );
+
+        // Find an active invitation.
+        const currentInvitation = rows.find(
+          (item) => item.status === "pending" || item.status === "accepted",
+        );
+
+        // No active invitation means photos stay locked.
+        if (!currentInvitation) return;
+
+        // A pending invitation does not unlock photos.
+        if (currentInvitation.status === "pending") {
+          if (currentInvitation.sender_id === authData.user.id) {
+            setInterestSent(true);
+          } else {
+            setPendingReceived(true);
+          }
+
           return;
         }
 
-        if (!invitation) return;
+        // Only an accepted invitation unlocks photos.
         setAcceptedMatch(true);
 
         const bucket = supabase.storage.from(PHOTO_BUCKET);
@@ -203,7 +282,17 @@ export default function MemberProfileScreen() {
   }, [userId, router]);
 
   async function handleSendInterest() {
-    if (!profile || sendingInterest || interestSent) return;
+    if (
+      !profile ||
+      sendingInterest ||
+      interestSent ||
+      pendingReceived ||
+      acceptedMatch ||
+      blockedByMe ||
+      isOwnProfile
+    ) {
+      return;
+    }
 
     setSendingInterest(true);
     setInterestMessage("");
@@ -249,6 +338,73 @@ export default function MemberProfileScreen() {
       );
     } finally {
       setSendingInterest(false);
+    }
+  }
+
+  async function handleToggleBlock() {
+    if (!userId || typeof userId !== "string" || blockBusy) {
+      return;
+    }
+
+    setBlockBusy(true);
+    setBlockFeedback("");
+
+    try {
+      const { data: auth, error: authError } = await supabase.auth.getUser();
+
+      if (authError || !auth.user) {
+        router.replace("/login");
+        return;
+      }
+
+      if (auth.user.id === userId) {
+        throw new Error("You cannot block your own account.");
+      }
+
+      const wasBlocked = blockedByMe;
+
+      if (wasBlocked) {
+        // Unblock this member
+        const { error } = await supabase
+          .from("rishta_blocks")
+          .delete()
+          .eq("blocker_id", auth.user.id)
+          .eq("blocked_id", userId);
+
+        if (error) throw error;
+      } else {
+        // Block this member
+        const { error } = await supabase.from("rishta_blocks").insert({
+          blocker_id: auth.user.id,
+          blocked_id: userId,
+        });
+
+        if (error && error.code !== "23505") {
+          throw error;
+        }
+      }
+
+      setBlockedByMe(!wasBlocked);
+      setAcceptedMatch(false);
+      setPhotoUrls([]);
+      setBlockConfirm(false);
+
+      setBlockFeedback(
+        wasBlocked
+          ? "Member unblocked successfully."
+          : "Member blocked. Private photos and messaging access are restricted.",
+      );
+
+      // Reload member profile and permissions
+      setReloadKey((previous) => previous + 1);
+    } catch (caughtError) {
+      setBlockFeedback(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unable to update block status.",
+      );
+    } finally {
+      setBlockBusy(false);
     }
   }
 
@@ -395,11 +551,23 @@ export default function MemberProfileScreen() {
 
                 <Pressable
                   accessibilityRole="button"
-                  disabled={sendingInterest || interestSent || isOwnProfile}
+                  disabled={
+                    sendingInterest ||
+                    interestSent ||
+                    pendingReceived ||
+                    acceptedMatch ||
+                    blockedByMe ||
+                    isOwnProfile
+                  }
                   onPress={() => void handleSendInterest()}
                   style={({ pressed }) => [
                     styles.interestButton,
-                    (sendingInterest || interestSent || isOwnProfile) &&
+                    (sendingInterest ||
+                      interestSent ||
+                      pendingReceived ||
+                      acceptedMatch ||
+                      blockedByMe ||
+                      isOwnProfile) &&
                       styles.interestButtonDisabled,
                     pressed && styles.pressed,
                   ]}
@@ -408,19 +576,35 @@ export default function MemberProfileScreen() {
                     <ActivityIndicator size="small" color={C.white} />
                   ) : (
                     <Text style={styles.interestIcon}>
-                      {interestSent ? "✓" : "♡"}
+                      {interestSent || acceptedMatch ? "✓" : "♡"}
                     </Text>
                   )}
+
                   <Text style={styles.interestButtonText}>
                     {isOwnProfile
                       ? "Your Own Profile"
-                      : sendingInterest
-                        ? "Sending..."
-                        : interestSent
-                          ? "Interest Sent"
-                          : "Send Interest"}
+                      : blockedByMe
+                        ? "Member Blocked"
+                        : acceptedMatch
+                          ? "✓ Matched"
+                          : pendingReceived
+                            ? "Invitation Received"
+                            : sendingInterest
+                              ? "Sending..."
+                              : interestSent
+                                ? "Request Sent"
+                                : hadPreviousInvitation
+                                  ? "Send Interest Again"
+                                  : "Send Interest"}
                   </Text>
                 </Pressable>
+
+                {pendingReceived ? (
+                  <Text style={styles.bodyText}>
+                    This member has already sent you an invitation. Go to Find
+                    Rishta → Received to accept or decline it.
+                  </Text>
+                ) : null}
 
                 {interestMessage ? (
                   <View
@@ -489,6 +673,59 @@ export default function MemberProfileScreen() {
               </View>
 
               <View style={styles.privacyCard}>
+                {/* Block / Unblock Member */}
+                {!isOwnProfile ? (
+                  <View style={styles.card}>
+                    <Text style={styles.sectionTitle}>Safety & Privacy</Text>
+
+                    <Text style={styles.bodyText}>
+                      {blockedByMe
+                        ? "You have blocked this member. Private photos and messaging are restricted."
+                        : "Block this member to prevent private photo access and messaging."}
+                    </Text>
+
+                    {blockConfirm ? (
+                      <View style={styles.safetyActions}>
+                        <Pressable
+                          disabled={blockBusy}
+                          onPress={() => setBlockConfirm(false)}
+                          style={styles.safetyCancel}
+                        >
+                          <Text style={styles.safetyCancelText}>Cancel</Text>
+                        </Pressable>
+
+                        <Pressable
+                          disabled={blockBusy}
+                          onPress={() => void handleToggleBlock()}
+                          style={styles.safetyButton}
+                        >
+                          <Text style={styles.safetyButtonText}>
+                            {blockBusy
+                              ? "Please wait..."
+                              : blockedByMe
+                                ? "Confirm Unblock"
+                                : "Confirm Block"}
+                          </Text>
+                        </Pressable>
+                      </View>
+                    ) : (
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => setBlockConfirm(true)}
+                        style={styles.safetyButton}
+                      >
+                        <Text style={styles.safetyButtonText}>
+                          {blockedByMe ? "Unblock Member" : "Block Member"}
+                        </Text>
+                      </Pressable>
+                    )}
+
+                    {blockFeedback ? (
+                      <Text style={styles.bodyText}>{blockFeedback}</Text>
+                    ) : null}
+                  </View>
+                ) : null}
+
                 <Text style={styles.privacyTitle}>♡ Privacy First</Text>
                 <Text style={styles.privacyText}>
                   Only information approved for public discovery is shown here.
@@ -515,6 +752,47 @@ export default function MemberProfileScreen() {
 }
 
 const styles = StyleSheet.create({
+  safetyActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+
+  safetyButton: {
+    flex: 1,
+    minWidth: 130,
+    minHeight: 48,
+    backgroundColor: "#352429",
+    borderWidth: 1,
+    borderColor: C.error,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 14,
+  },
+
+  safetyButtonText: {
+    color: C.error,
+    fontWeight: "800",
+    fontSize: 14,
+  },
+
+  safetyCancel: {
+    flex: 1,
+    minWidth: 100,
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  safetyCancelText: {
+    color: C.white,
+    fontWeight: "700",
+  },
+
   container: { flex: 1, backgroundColor: C.bg },
   content: {
     flexGrow: 1,

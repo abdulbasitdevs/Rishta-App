@@ -1,3 +1,4 @@
+import { startRishtaCall } from "@/lib/livekit";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -147,6 +148,11 @@ export default function BrowseProfilesScreen() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
+  const [mainCallMenuOpen, setMainCallMenuOpen] = useState(false);
+  const [selectedCallMode, setSelectedCallMode] = useState<
+    "audio" | "video" | null
+  >(null);
+
   const [search, setSearch] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [gender, setGender] = useState("All");
@@ -262,11 +268,16 @@ export default function BrowseProfilesScreen() {
   const getOtherId = (i: Invitation) =>
     i.sender_id === myId ? i.receiver_id : i.sender_id;
 
+  // Only pending or accepted invitations
+  // can prevent sending another request.
+  // Cancelled and declined invitations are history.
+
   const getExisting = (userId: string) =>
     invitations.find(
       (i) =>
-        (i.sender_id === myId && i.receiver_id === userId) ||
-        (i.receiver_id === myId && i.sender_id === userId),
+        (i.status === "pending" || i.status === "accepted") &&
+        ((i.sender_id === myId && i.receiver_id === userId) ||
+          (i.receiver_id === myId && i.sender_id === userId)),
     );
 
   function openProfile(id: string) {
@@ -357,6 +368,13 @@ export default function BrowseProfilesScreen() {
   function renderProfile(p: DiscoveryProfile) {
     const existing = getExisting(p.user_id);
 
+    const hadPreviousInvitation = invitations.some(
+      (i) =>
+        (i.status === "cancelled" || i.status === "declined") &&
+        ((i.sender_id === myId && i.receiver_id === p.user_id) ||
+          (i.receiver_id === myId && i.sender_id === p.user_id)),
+    );
+
     const label =
       existing?.status === "accepted"
         ? "✓ Matched"
@@ -366,7 +384,9 @@ export default function BrowseProfilesScreen() {
             ? "View Received"
             : existing
               ? "Request Closed"
-              : "➤ Send Request";
+              : hadPreviousInvitation
+                ? "➤ Send Interest Again"
+                : "➤ Send Request";
 
     return (
       <View key={p.user_id} style={styles.card}>
@@ -478,15 +498,79 @@ export default function BrowseProfilesScreen() {
             />
           </View>
         ) : kind === "Matches" ? (
-          <View style={styles.actionRow}>
-            <Action
-              label={
-                profile ? "◎ View Profile & Photos" : "Profile Unavailable"
-              }
-              disabled={!profile}
-              onPress={() => openProfile(other)}
-            />
-          </View>
+          <>
+            <View style={styles.actionRow}>
+              <Action
+                label="💬 My Chat"
+                outline
+                onPress={() =>
+                  router.push({
+                    pathname: "/chat/[invitationId]",
+                    params: { invitationId: i.id },
+                  })
+                }
+              />
+
+              {selectedCallMode ? (
+                <Action
+                  label={
+                    workingId === i.id
+                      ? "Starting call..."
+                      : selectedCallMode === "audio"
+                        ? "🎙 Select for Audio Call"
+                        : "🎥 Select for Video Call"
+                  }
+                  disabled={!!workingId}
+                  onPress={() => {
+                    const callType = selectedCallMode;
+
+                    if (!callType || workingId) return;
+
+                    setWorkingId(i.id);
+                    setNotice("Starting call...");
+
+                    void (async () => {
+                      try {
+                        const call = await startRishtaCall(i.id, callType);
+
+                        setNotice(
+                          `${callType === "audio" ? "Audio" : "Video"} call request sent to ${name}.`,
+                        );
+
+                        setSelectedCallMode(null);
+
+                        router.push({
+                          pathname: "/call",
+                          params: {
+                            callId: call.id,
+                            callType: call.call_type,
+                          },
+                        });
+                      } catch (error) {
+                        setNotice(
+                          error instanceof Error
+                            ? error.message
+                            : "Unable to start call.",
+                        );
+                      } finally {
+                        setWorkingId(null);
+                      }
+                    })();
+                  }}
+                />
+              ) : null}
+            </View>
+
+            <View style={styles.actionRow}>
+              <Action
+                label={
+                  profile ? "◎ View Profile & Photos" : "Profile Unavailable"
+                }
+                disabled={!profile}
+                onPress={() => openProfile(other)}
+              />
+            </View>
+          </>
         ) : profile ? (
           <View style={styles.actionRow}>
             <Action
@@ -549,6 +633,79 @@ export default function BrowseProfilesScreen() {
 
             <View style={styles.accentLine} />
           </View>
+
+          {/* Private Chat Shortcut */}
+
+          {/* Private Chat & Call Shortcut */}
+          <View style={styles.chatShortcutRow}>
+            <View style={styles.chatShortcutInfo}>
+              <Text style={styles.chatShortcutTitle}>
+                Private Conversations
+              </Text>
+
+              <Text style={styles.chatShortcutSubtitle}>
+                Chat and call your accepted matches.
+              </Text>
+            </View>
+
+            <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push("/chats")}
+                style={styles.chatShortcutButton}
+              >
+                <Text style={styles.chatShortcutButtonText}>💬 My Chats</Text>
+              </Pressable>
+
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setMainCallMenuOpen(!mainCallMenuOpen)}
+                style={styles.chatShortcutButton}
+              >
+                <Text style={styles.chatShortcutButtonText}>📞 Call</Text>
+              </Pressable>
+
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push("/call-history")}
+                style={styles.chatShortcutButton}
+              >
+                <Text style={styles.chatShortcutButtonText}>
+                  📋 Call History
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {mainCallMenuOpen ? (
+            <View style={[styles.card, { marginTop: -8 }]}>
+              <Text style={styles.cardName}>Choose Call Type</Text>
+
+              <View style={styles.actionRow}>
+                <Action
+                  label="🎙 Audio Call"
+                  outline
+                  onPress={() => {
+                    setSelectedCallMode("audio");
+                    setMainCallMenuOpen(false);
+                    setTab("Matches");
+                    setNotice("Select an accepted match for an audio call.");
+                  }}
+                />
+
+                <Action
+                  label="🎥 Video Call"
+                  outline
+                  onPress={() => {
+                    setSelectedCallMode("video");
+                    setMainCallMenuOpen(false);
+                    setTab("Matches");
+                    setNotice("Select an accepted match for a video call.");
+                  }}
+                />
+              </View>
+            </View>
+          ) : null}
 
           {/* Four working tabs */}
           <View style={styles.tabs}>
@@ -841,6 +998,55 @@ export default function BrowseProfilesScreen() {
 }
 
 const styles = StyleSheet.create({
+  chatShortcutRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    backgroundColor: C.panel,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+  },
+
+  chatShortcutInfo: {
+    flex: 1,
+    minWidth: 150,
+    gap: 6,
+  },
+
+  chatShortcutTitle: {
+    color: C.white,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+
+  chatShortcutSubtitle: {
+    color: C.muted,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+
+  chatShortcutButton: {
+    backgroundColor: C.emeraldDark,
+    borderWidth: 1,
+    borderColor: C.emerald,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    minHeight: 46,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  chatShortcutButtonText: {
+    color: C.white,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
   page: {
     flex: 1,
     backgroundColor: C.bg,

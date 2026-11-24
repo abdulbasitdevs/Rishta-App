@@ -66,6 +66,305 @@ const sectOptions = [
   "Prefer not to say",
 ];
 
+type ProfessionField = { key: string; label: string; placeholder: string };
+
+const professionOptions = [
+  "Doctor",
+  "Dentist",
+  "Engineer",
+  "Software Developer",
+  "Lawyer",
+  "Teacher",
+  "Professor",
+  "Student",
+  "Worker",
+  "Business Owner",
+  "Accountant",
+  "Banker",
+  "Nurse",
+  "Pharmacist",
+  "Government Employee",
+  "Armed Forces",
+  "IT Professional",
+  "Designer",
+  "Freelancer",
+  "Farmer",
+  "Driver",
+  "Technician",
+  "Homemaker",
+  "Unemployed",
+  "Other",
+];
+
+// A small, optional set of details for each profession. These are self-reported,
+// not proof of professional registration or verification.
+const professionFields: Record<string, ProfessionField[]> = {
+  Doctor: [
+    {
+      key: "specialty",
+      label: "Medical specialty",
+      placeholder: "e.g. General Physician",
+    },
+    {
+      key: "registration",
+      label: "PMDC registration number (optional)",
+      placeholder: "Registration number",
+    },
+    {
+      key: "workplace",
+      label: "Hospital / clinic",
+      placeholder: "Where do you work?",
+    },
+  ],
+  Dentist: [
+    {
+      key: "registration",
+      label: "PMDC registration number (optional)",
+      placeholder: "Registration number",
+    },
+    {
+      key: "workplace",
+      label: "Clinic / hospital",
+      placeholder: "Clinic or hospital",
+    },
+  ],
+  Engineer: [
+    {
+      key: "specialization",
+      label: "Engineering field",
+      placeholder: "Civil, Electrical, Mechanical...",
+    },
+    {
+      key: "registration",
+      label: "PEC registration (if applicable)",
+      placeholder: "Optional registration number",
+    },
+    {
+      key: "workplace",
+      label: "Company / employer",
+      placeholder: "Company name",
+    },
+  ],
+  "Software Developer": [
+    {
+      key: "specialization",
+      label: "Technology / role",
+      placeholder: "Web, Mobile, Backend...",
+    },
+    {
+      key: "workplace",
+      label: "Company / freelance",
+      placeholder: "Company or freelance",
+    },
+  ],
+  Lawyer: [
+    {
+      key: "specialization",
+      label: "Area of practice",
+      placeholder: "Civil, Criminal, Family...",
+    },
+    {
+      key: "registration",
+      label: "Bar Council enrollment (optional)",
+      placeholder: "Enrollment number",
+    },
+    {
+      key: "workplace",
+      label: "Chamber / firm",
+      placeholder: "Name of chamber",
+    },
+  ],
+  Teacher: [
+    {
+      key: "subject",
+      label: "Teaching subject",
+      placeholder: "English, Mathematics...",
+    },
+    {
+      key: "workplace",
+      label: "School / institution",
+      placeholder: "School name",
+    },
+  ],
+  Professor: [
+    {
+      key: "subject",
+      label: "Department / subject",
+      placeholder: "e.g. Computer Science",
+    },
+    {
+      key: "workplace",
+      label: "College / university",
+      placeholder: "Institution name",
+    },
+  ],
+  Student: [
+    {
+      key: "program",
+      label: "Degree / course",
+      placeholder: "BS, MBBS, MBA...",
+    },
+    {
+      key: "workplace",
+      label: "College / university",
+      placeholder: "Institution name",
+    },
+  ],
+  Worker: [
+    {
+      key: "specialization",
+      label: "Type of work",
+      placeholder: "Skilled worker, laborer...",
+    },
+    {
+      key: "workplace",
+      label: "Employer (optional)",
+      placeholder: "Company or self-employed",
+    },
+  ],
+  "Business Owner": [
+    {
+      key: "specialization",
+      label: "Business type",
+      placeholder: "Retail, E-commerce...",
+    },
+    {
+      key: "workplace",
+      label: "Business name (optional)",
+      placeholder: "Business name",
+    },
+  ],
+  Accountant: [
+    {
+      key: "qualification",
+      label: "Qualification",
+      placeholder: "CA, ACCA, CMA...",
+    },
+    { key: "workplace", label: "Employer / firm", placeholder: "Organization" },
+  ],
+  Banker: [
+    {
+      key: "specialization",
+      label: "Department / role",
+      placeholder: "Operations, Finance...",
+    },
+    { key: "workplace", label: "Bank name (optional)", placeholder: "Bank" },
+  ],
+  Nurse: [
+    {
+      key: "specialization",
+      label: "Nursing area",
+      placeholder: "General, ICU...",
+    },
+    { key: "workplace", label: "Hospital / clinic", placeholder: "Workplace" },
+  ],
+  Pharmacist: [
+    {
+      key: "specialization",
+      label: "Area",
+      placeholder: "Hospital, Community...",
+    },
+    {
+      key: "workplace",
+      label: "Pharmacy / hospital",
+      placeholder: "Workplace",
+    },
+  ],
+  "Government Employee": [
+    {
+      key: "specialization",
+      label: "Department / role",
+      placeholder: "Department",
+    },
+    {
+      key: "workplace",
+      label: "Organization (optional)",
+      placeholder: "Organization",
+    },
+  ],
+  "Armed Forces": [
+    {
+      key: "specialization",
+      label: "Service branch (optional)",
+      placeholder: "Army, Navy, Air Force...",
+    },
+  ],
+  "IT Professional": [
+    {
+      key: "specialization",
+      label: "IT specialization",
+      placeholder: "Networking, Security, Support...",
+    },
+    { key: "workplace", label: "Employer (optional)", placeholder: "Company" },
+  ],
+  Designer: [
+    {
+      key: "specialization",
+      label: "Design field",
+      placeholder: "Graphic, UI/UX, Fashion...",
+    },
+    {
+      key: "workplace",
+      label: "Company / freelance",
+      placeholder: "Workplace",
+    },
+  ],
+  Freelancer: [
+    {
+      key: "specialization",
+      label: "Freelance service",
+      placeholder: "Writing, Development...",
+    },
+  ],
+  Farmer: [
+    {
+      key: "specialization",
+      label: "Farming type",
+      placeholder: "Crops, Livestock...",
+    },
+  ],
+  Driver: [
+    {
+      key: "specialization",
+      label: "Driving type",
+      placeholder: "Commercial, Private...",
+    },
+  ],
+  Technician: [
+    {
+      key: "specialization",
+      label: "Technical trade",
+      placeholder: "Electrician, HVAC...",
+    },
+  ],
+  Homemaker: [
+    {
+      key: "specialization",
+      label: "Additional details (optional)",
+      placeholder: "Share anything you'd like",
+    },
+  ],
+  Unemployed: [
+    {
+      key: "specialization",
+      label: "Current focus (optional)",
+      placeholder: "Seeking work, training...",
+    },
+  ],
+  Other: [
+    {
+      key: "profession_name",
+      label: "Your profession",
+      placeholder: "Enter your profession",
+    },
+    {
+      key: "specialization",
+      label: "Area / role (optional)",
+      placeholder: "What do you do?",
+    },
+  ],
+};
+
 type ChoiceGroupProps = {
   options: string[];
   selected: string;
@@ -168,7 +467,10 @@ export default function ProfileDetailsScreen() {
 
   const [education, setEducation] = useState("");
   const [profession, setProfession] = useState("");
-  const [height, setHeight] = useState("");
+  const [professionMenuOpen, setProfessionMenuOpen] = useState(false);
+  const [professionDetails, setProfessionDetails] = useState<
+    Record<string, string>
+  >({});
   const [religion, setReligion] = useState("");
   const [muslimSect, setMuslimSect] = useState("");
   const [familyOverview, setFamilyOverview] = useState("");
@@ -205,7 +507,7 @@ export default function ProfileDetailsScreen() {
         const { data: profile, error: profileError } = await supabase
           .from("rishta_profiles")
           .select(
-            "education_level, profession, height_cm, religion, faith_category, muslim_sect, family_overview, profile_step",
+            "education_level, profession, profession_details, religion, faith_category, muslim_sect, family_overview, profile_step",
           )
           .eq("user_id", data.user.id)
           .maybeSingle();
@@ -223,9 +525,31 @@ export default function ProfileDetailsScreen() {
         }
 
         setEducation(profile.education_level ?? "");
-        setProfession(profile.profession ?? "");
-
-        setHeight(profile.height_cm != null ? String(profile.height_cm) : "");
+        const savedProfession = profile.profession ?? "";
+        setProfession(
+          professionOptions.includes(savedProfession)
+            ? savedProfession
+            : savedProfession
+              ? "Other"
+              : "",
+        );
+        const loadedDetails = profile.profession_details;
+        const details =
+          loadedDetails &&
+          typeof loadedDetails === "object" &&
+          !Array.isArray(loadedDetails)
+            ? Object.fromEntries(
+                Object.entries(loadedDetails).filter(
+                  (entry): entry is [string, string] =>
+                    typeof entry[1] === "string",
+                ),
+              )
+            : {};
+        setProfessionDetails(
+          savedProfession && !professionOptions.includes(savedProfession)
+            ? { ...details, profession_name: savedProfession }
+            : details,
+        );
 
         const savedReligion = profile.faith_category ?? profile.religion ?? "";
 
@@ -290,23 +614,21 @@ export default function ProfileDetailsScreen() {
       return;
     }
 
-    const cleanProfession = profession.trim();
+    const cleanProfession =
+      profession === "Other"
+        ? (professionDetails.profession_name ?? "").trim()
+        : profession.trim();
 
     if (cleanProfession.length < 2 || cleanProfession.length > 100) {
-      setError("Please enter a valid profession.");
+      setError("Please select a profession (or enter a name under Other).");
       return;
     }
 
-    const trimmedHeight = height.trim();
-
-    const heightValue = trimmedHeight ? Number(trimmedHeight) : null;
-
-    if (
-      heightValue !== null &&
-      (!/^\d+$/.test(trimmedHeight) || heightValue < 100 || heightValue > 230)
-    ) {
-      setError("Height must be between 100 and 230 cm.");
-      return;
+    const detailsToSave: Record<string, string> = {};
+    for (const field of professionFields[profession] ?? []) {
+      if (field.key === "profession_name") continue;
+      const value = (professionDetails[field.key] ?? "").trim();
+      if (value) detailsToSave[field.key] = value;
     }
 
     const cleanReligion = religion.trim();
@@ -344,7 +666,7 @@ export default function ProfileDetailsScreen() {
         .update({
           education_level: education,
           profession: cleanProfession,
-          height_cm: heightValue,
+          profession_details: detailsToSave,
 
           religion:
             cleanReligion && cleanReligion !== "Prefer not to say"
@@ -543,68 +865,100 @@ export default function ProfileDetailsScreen() {
                 />
               </View>
 
-              {/* Profession */}
+              {/* Profession: selection + optional fields, no verification claim. */}
               <View style={styles.fieldGroup}>
                 <Text style={styles.label}>
                   Profession <Text style={styles.required}>*</Text>
                 </Text>
 
-                <View style={styles.inputContainer}>
-                  <Text style={styles.fieldIcon}>♙</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Choose profession"
+                  accessibilityState={{ expanded: professionMenuOpen }}
+                  disabled={loading}
+                  onPress={() => setProfessionMenuOpen((open) => !open)}
+                  style={styles.dropdownButton}
+                >
+                  <Text
+                    style={
+                      profession
+                        ? styles.dropdownValue
+                        : styles.dropdownPlaceholder
+                    }
+                  >
+                    {profession || "Select your profession"}
+                  </Text>
+                  <Text style={styles.dropdownArrow}>
+                    {professionMenuOpen ? "▲" : "▼"}
+                  </Text>
+                </Pressable>
 
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Software Engineer, Teacher..."
-                    placeholderTextColor={C.muted}
-                    value={profession}
-                    onChangeText={(value) => {
-                      setProfession(value);
-                      markUnsaved();
-                    }}
-                    editable={!loading}
-                    maxLength={100}
-                    autoCapitalize="words"
-                    accessibilityLabel="Profession"
-                  />
-                </View>
+                {professionMenuOpen ? (
+                  <View style={styles.dropdownList}>
+                    {professionOptions.map((option) => (
+                      <Pressable
+                        key={option}
+                        accessibilityRole="button"
+                        disabled={loading}
+                        style={[
+                          styles.dropdownOption,
+                          profession === option &&
+                            styles.dropdownOptionSelected,
+                        ]}
+                        onPress={() => {
+                          setProfession(option);
+                          setProfessionDetails({});
+                          setProfessionMenuOpen(false);
+                          markUnsaved();
+                        }}
+                      >
+                        <Text style={styles.dropdownOptionText}>
+                          {profession === option ? "✓  " : ""}
+                          {option}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
 
-                <Text style={styles.helper}>
-                  Enter your current profession or occupation.
-                </Text>
-              </View>
-
-              {/* Height */}
-              <View style={styles.fieldGroup}>
-                <View style={styles.labelRow}>
-                  <Text style={styles.label}>Height</Text>
-
-                  <Text style={styles.optionalBadge}>OPTIONAL</Text>
-                </View>
-
-                <View style={styles.inputContainer}>
-                  <Text style={styles.fieldIcon}>◇</Text>
-
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g. 170"
-                    placeholderTextColor={C.muted}
-                    keyboardType="number-pad"
-                    maxLength={3}
-                    value={height}
-                    onChangeText={(value) => {
-                      setHeight(value);
-                      markUnsaved();
-                    }}
-                    editable={!loading}
-                    accessibilityLabel="Height in centimeters"
-                  />
-
-                  <Text style={styles.inputSuffix}>cm</Text>
-                </View>
-
-                <Text style={styles.helper}>
-                  Height can be between 100 and 230 cm.
-                </Text>
+                {profession ? (
+                  <View style={styles.professionExtra}>
+                    <Text style={styles.sectionSubtitle}>
+                      {profession === "Other"
+                        ? "Tell us about your occupation"
+                        : `${profession} — additional details (optional)`}
+                    </Text>
+                    {(professionFields[profession] ?? []).map((field) => (
+                      <View key={field.key} style={styles.fieldGroup}>
+                        <Text style={styles.label}>{field.label}</Text>
+                        <View style={styles.inputContainer}>
+                          <TextInput
+                            style={styles.input}
+                            placeholder={field.placeholder}
+                            placeholderTextColor={C.muted}
+                            value={professionDetails[field.key] ?? ""}
+                            onChangeText={(value) => {
+                              setProfessionDetails((current) => ({
+                                ...current,
+                                [field.key]: value,
+                              }));
+                              markUnsaved();
+                            }}
+                            editable={!loading}
+                            maxLength={100}
+                            autoCapitalize="words"
+                            accessibilityLabel={field.label}
+                          />
+                        </View>
+                      </View>
+                    ))}
+                    <Text style={styles.helper}>
+                      These details are self-reported and not professionally
+                      verified. You can finish your profile without submitting
+                      documents.
+                    </Text>
+                  </View>
+                ) : null}
               </View>
             </View>
 
@@ -1113,6 +1467,45 @@ const styles = StyleSheet.create({
     color: C.muted,
     fontSize: 12,
     lineHeight: 19,
+  },
+
+  dropdownButton: {
+    minHeight: 56,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    backgroundColor: C.surfaceDark,
+    borderRadius: 13,
+    paddingHorizontal: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  dropdownValue: { color: C.white, fontSize: 15, flex: 1 },
+  dropdownPlaceholder: { color: C.muted, fontSize: 15, flex: 1 },
+  dropdownArrow: { color: C.gold, fontSize: 12 },
+  dropdownList: {
+    backgroundColor: C.surfaceDark,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 13,
+    overflow: "hidden",
+  },
+  dropdownOption: {
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+  dropdownOptionSelected: { backgroundColor: "#07473A" },
+  dropdownOptionText: { color: C.white, fontSize: 14 },
+  professionExtra: {
+    backgroundColor: C.surfaceDark,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 14,
+    gap: 15,
   },
 
   // Form fields

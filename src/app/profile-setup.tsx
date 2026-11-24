@@ -41,6 +41,148 @@ const genderOptions = ["Male", "Female", "Prefer not to say"];
 
 const maritalOptions = ["Never Married", "Divorced", "Widowed", "Separated"];
 
+const communityOptions = [
+  "Punjabi",
+  "Sindhi",
+  "Pashtun / Pakhtoon",
+  "Baloch",
+  "Balti",
+  "Shina",
+  "Saraiki",
+  "Kashmiri",
+  "Gilgiti",
+  "Burusho",
+  "Wakhi",
+  "Khowar / Chitrali",
+  "Hindko",
+  "Hazara",
+  "Brahui",
+  "Urdu-speaking",
+  "Other",
+  "Prefer not to say",
+];
+
+const casteOptions = [
+  "Rajput",
+  "Jutt / Jat",
+  "Gujjar",
+  "Arain",
+  "Awan",
+  "Syed",
+  "Sheikh",
+  "Mughal",
+  "Pathan",
+  "Abbasi",
+  "Malik",
+  "Qureshi",
+  "Khan",
+  "Butt",
+  "Chaudhry",
+  "Other",
+  "Prefer not to say",
+];
+
+const cityOptions = [
+  "Karachi",
+  "Lahore",
+  "Faisalabad",
+  "Rawalpindi",
+  "Gujranwala",
+  "Peshawar",
+  "Multan",
+  "Hyderabad",
+  "Islamabad",
+  "Quetta",
+  "Bahawalpur",
+  "Sargodha",
+  "Sialkot",
+  "Sukkur",
+  "Larkana",
+  "Sheikhupura",
+  "Rahim Yar Khan",
+  "Jhang",
+  "Dera Ghazi Khan",
+  "Gujrat",
+  "Skardu",
+  "Gilgit",
+  "Other / Type manually",
+];
+
+type DropdownProps = {
+  label: string;
+  value: string;
+  options: string[];
+  placeholder: string;
+  onSelect: (value: string) => void;
+};
+
+function Dropdown({
+  label,
+  value,
+  options,
+  placeholder,
+  onSelect,
+}: DropdownProps) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={styles.dropdownWrapper}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ expanded: open }}
+        style={styles.dropdownButton}
+        onPress={() => setOpen((previous) => !previous)}
+      >
+        <Text style={[styles.dropdownButtonText, !value && { color: C.muted }]}>
+          {value || placeholder}
+        </Text>
+        <Text style={styles.dropdownChevron}>{open ? "⌃" : "⌄"}</Text>
+      </Pressable>
+      {open ? (
+        <ScrollView
+          style={styles.dropdownList}
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
+        >
+          {options.map((option) => (
+            <Pressable
+              key={option}
+              accessibilityRole="button"
+              style={styles.dropdownOption}
+              onPress={() => {
+                onSelect(option);
+                setOpen(false);
+              }}
+            >
+              <Text
+                style={[
+                  styles.dropdownOptionText,
+                  value === option && { color: C.emeraldBright },
+                ]}
+              >
+                {value === option ? "✓  " : ""}
+                {option}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
+    </View>
+  );
+}
+
+// 4 feet, 4.5 feet ... 7 feet (half-foot intervals).
+// Height remains stored in centimeters in the existing height_cm field.
+const heightOptions = Array.from({ length: 7 }, (_, i) => {
+  const feet = 4 + i * 0.5;
+  const wholeFeet = Math.floor(feet);
+  const inches = feet % 1 === 0 ? 0 : 6;
+  return {
+    label: `${wholeFeet}'${inches === 0 ? "0" : "6"}\" (${feet.toFixed(1)} ft)`,
+    centimeters: String(Math.round(feet * 30.48)),
+  };
+});
+
 type ActionButtonProps = {
   title: string;
   onPress: () => void;
@@ -100,11 +242,18 @@ export default function ProfileSetupScreen() {
   const [authError, setAuthError] = useState("");
 
   const [fullName, setFullName] = useState("");
+  const [fatherGuardianName, setFatherGuardianName] = useState("");
+  const [community, setCommunity] = useState("");
+  const [customCommunity, setCustomCommunity] = useState("");
+  const [caste, setCaste] = useState("");
+  const [customCaste, setCustomCaste] = useState("");
+  const [cityChoice, setCityChoice] = useState("");
   const [gender, setGender] = useState("");
   const [day, setDay] = useState("");
   const [month, setMonth] = useState("");
   const [year, setYear] = useState("");
   const [city, setCity] = useState("");
+  const [height, setHeight] = useState("");
   const [maritalStatus, setMaritalStatus] = useState("");
 
   const [error, setError] = useState("");
@@ -148,7 +297,9 @@ export default function ProfileSetupScreen() {
         // Read only the logged-in user's profile.
         const { data: existingProfile, error: profileError } = await supabase
           .from("rishta_profiles")
-          .select("full_name, gender, date_of_birth, city, marital_status")
+          .select(
+            "full_name, father_guardian_name, community, caste, gender, date_of_birth, city, marital_status, height_cm",
+          )
           .eq("user_id", user.id)
           .maybeSingle();
 
@@ -161,8 +312,42 @@ export default function ProfileSetupScreen() {
 
         if (existingProfile) {
           setFullName(existingProfile.full_name ?? "");
+          setFatherGuardianName(existingProfile.father_guardian_name ?? "");
+          const savedCommunity = existingProfile.community ?? "";
+          setCommunity(
+            communityOptions.includes(savedCommunity)
+              ? savedCommunity
+              : savedCommunity
+                ? "Other"
+                : "",
+          );
+          setCustomCommunity(
+            communityOptions.includes(savedCommunity) ? "" : savedCommunity,
+          );
+          const savedCaste = existingProfile.caste ?? "";
+          setCaste(
+            casteOptions.includes(savedCaste)
+              ? savedCaste
+              : savedCaste
+                ? "Other"
+                : "",
+          );
+          setCustomCaste(casteOptions.includes(savedCaste) ? "" : savedCaste);
+          const savedCity = existingProfile.city ?? "";
+          setCityChoice(
+            cityOptions.includes(savedCity)
+              ? savedCity
+              : savedCity
+                ? "Other / Type manually"
+                : "",
+          );
           setGender(existingProfile.gender ?? "");
           setCity(existingProfile.city ?? "");
+          setHeight(
+            existingProfile.height_cm != null
+              ? String(existingProfile.height_cm)
+              : "",
+          );
           setMaritalStatus(existingProfile.marital_status ?? "");
 
           if (existingProfile.date_of_birth) {
@@ -213,6 +398,10 @@ export default function ProfileSetupScreen() {
     setSaved(false);
 
     const cleanName = fullName.trim();
+    const cleanGuardian = fatherGuardianName.trim();
+    const resolvedCommunity =
+      community === "Other" ? customCommunity.trim() : community;
+    const resolvedCaste = caste === "Other" ? customCaste.trim() : caste;
     const cleanCity = city.trim();
 
     if (cleanName.length < 2) {
@@ -220,6 +409,17 @@ export default function ProfileSetupScreen() {
       return;
     }
 
+    if (
+      cleanGuardian.length > 120 ||
+      (cleanGuardian.length > 0 && cleanGuardian.length < 2)
+    ) {
+      setError("Please enter a valid father/guardian name or leave it blank.");
+      return;
+    }
+    if (resolvedCommunity.length > 80 || resolvedCaste.length > 80) {
+      setError("Community or caste is too long.");
+      return;
+    }
     if (!gender) {
       setError("Please select your gender.");
       return;
@@ -277,12 +477,24 @@ export default function ProfileSetupScreen() {
       return;
     }
 
+    const trimmedHeight = height.trim();
+    if (
+      trimmedHeight &&
+      (!/^\d+$/.test(trimmedHeight) ||
+        Number(trimmedHeight) < 100 ||
+        Number(trimmedHeight) > 230)
+    ) {
+      setError("Height must be between 100 and 230 cm.");
+      return;
+    }
+
     if (!maritalStatus) {
       setError("Please select your marital status.");
       return;
     }
 
     setFullName(cleanName);
+    setFatherGuardianName(cleanGuardian);
     setCity(cleanCity);
     setPreview(true);
   }
@@ -311,9 +523,15 @@ export default function ProfileSetupScreen() {
           {
             user_id: data.user.id,
             full_name: fullName.trim(),
+            father_guardian_name: fatherGuardianName.trim() || null,
+            community:
+              (community === "Other" ? customCommunity : community).trim() ||
+              null,
+            caste: (caste === "Other" ? customCaste : caste).trim() || null,
             gender,
             date_of_birth: formattedDate,
             city: city.trim(),
+            height_cm: height.trim() ? Number(height.trim()) : null,
             marital_status: maritalStatus,
             updated_at: new Date().toISOString(),
           },
@@ -479,6 +697,27 @@ export default function ProfileSetupScreen() {
 
                   <View style={styles.reviewCard}>
                     <ReviewRow label="Full Name" value={fullName} />
+                    <View style={styles.reviewDivider} />
+                    <ReviewRow
+                      label="Father / Guardian"
+                      value={fatherGuardianName || "Not specified"}
+                    />
+                    <View style={styles.reviewDivider} />
+                    <ReviewRow
+                      label="Qoum / Community"
+                      value={
+                        (community === "Other" ? customCommunity : community) ||
+                        "Not specified"
+                      }
+                    />
+                    <View style={styles.reviewDivider} />
+                    <ReviewRow
+                      label="Zaat / Caste"
+                      value={
+                        (caste === "Other" ? customCaste : caste) ||
+                        "Not specified"
+                      }
+                    />
 
                     <View style={styles.reviewDivider} />
 
@@ -498,6 +737,16 @@ export default function ProfileSetupScreen() {
                     <View style={styles.reviewDivider} />
 
                     <ReviewRow label="City" value={city} />
+
+                    <View style={styles.reviewDivider} />
+
+                    <ReviewRow
+                      label="Height"
+                      value={
+                        heightOptions.find((h) => h.centimeters === height)
+                          ?.label || "Not specified"
+                      }
+                    />
 
                     <View style={styles.reviewDivider} />
 
@@ -597,6 +846,79 @@ export default function ProfileSetupScreen() {
                     </View>
                   </View>
 
+                  {/* Father / Guardian name */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>
+                      Father / Guardian Name (Optional)
+                    </Text>
+                    <View style={styles.inputContainer}>
+                      <Text style={styles.fieldIcon}>♙</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={fatherGuardianName}
+                        onChangeText={setFatherGuardianName}
+                        placeholder="Enter father or guardian name"
+                        placeholderTextColor={C.muted}
+                        autoCapitalize="words"
+                        maxLength={120}
+                      />
+                    </View>
+                  </View>
+
+                  {/* Community and caste are always optional self-reported details. */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>
+                      Qoum / Community (Optional)
+                    </Text>
+                    <Dropdown
+                      label="Qoum or community"
+                      value={community}
+                      placeholder="Select your community"
+                      options={communityOptions}
+                      onSelect={(value) => {
+                        setCommunity(value);
+                        setCustomCommunity("");
+                      }}
+                    />
+                    {community === "Other" ? (
+                      <TextInput
+                        style={styles.customInput}
+                        value={customCommunity}
+                        onChangeText={setCustomCommunity}
+                        placeholder="Type your community"
+                        placeholderTextColor={C.muted}
+                        maxLength={80}
+                      />
+                    ) : null}
+                  </View>
+
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>Zaat / Caste (Optional)</Text>
+                    <Dropdown
+                      label="Zaat or caste"
+                      value={caste}
+                      placeholder="Select your zaat (optional)"
+                      options={casteOptions}
+                      onSelect={(value) => {
+                        setCaste(value);
+                        setCustomCaste("");
+                      }}
+                    />
+                    {caste === "Other" ? (
+                      <TextInput
+                        style={styles.customInput}
+                        value={customCaste}
+                        onChangeText={setCustomCaste}
+                        placeholder="Type your zaat"
+                        placeholderTextColor={C.muted}
+                        maxLength={80}
+                      />
+                    ) : null}
+                    <Text style={styles.helper}>
+                      Optional information. You can select Prefer not to say.
+                    </Text>
+                  </View>
+
                   {/* Gender */}
                   <View style={styles.fieldGroup}>
                     <Text style={styles.label}>
@@ -693,25 +1015,36 @@ export default function ProfileSetupScreen() {
                     </Text>
                   </View>
 
-                  {/* City */}
+                  {/* City — predefined dropdown or custom city */}
                   <View style={styles.fieldGroup}>
                     <Text style={styles.label}>
                       City <Text style={styles.required}>*</Text>
                     </Text>
-
-                    <View style={styles.inputContainer}>
-                      <Text style={styles.fieldIcon}>◇</Text>
-
+                    <Dropdown
+                      label="City"
+                      value={cityChoice}
+                      options={cityOptions}
+                      placeholder="Select your city"
+                      onSelect={(value) => {
+                        setCityChoice(value);
+                        setCity(value === "Other / Type manually" ? "" : value);
+                      }}
+                    />
+                    {cityChoice === "Other / Type manually" ? (
                       <TextInput
-                        style={styles.input}
+                        style={styles.customInput}
                         value={city}
                         onChangeText={setCity}
-                        placeholder="Skardu, Lahore, Karachi..."
+                        placeholder="Enter your city"
                         placeholderTextColor={C.muted}
+                        maxLength={100}
                         autoCapitalize="words"
-                        accessibilityLabel="City"
                       />
-                    </View>
+                    ) : null}
+                    <Text style={styles.helper}>
+                      Skardu and Gilgit are included. Choose Other to type any
+                      city.
+                    </Text>
                   </View>
 
                   {/* Marital Status */}
@@ -750,6 +1083,30 @@ export default function ProfileSetupScreen() {
                         );
                       })}
                     </View>
+                  </View>
+
+                  {/* Height — half-foot dropdown from 4'0 to 7'0 */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>Height (Optional)</Text>
+                    <Dropdown
+                      label="Height"
+                      value={
+                        heightOptions.find(
+                          (option) => option.centimeters === height,
+                        )?.label || ""
+                      }
+                      placeholder="Select height"
+                      options={heightOptions.map((option) => option.label)}
+                      onSelect={(label) => {
+                        const option = heightOptions.find(
+                          (item) => item.label === label,
+                        );
+                        setHeight(option?.centimeters ?? "");
+                      }}
+                    />
+                    <Text style={styles.helper}>
+                      4'0" to 7'0" in 6-inch steps.
+                    </Text>
                   </View>
 
                   {/* Validation error */}
@@ -793,6 +1150,45 @@ export default function ProfileSetupScreen() {
 }
 
 const styles = StyleSheet.create({
+  dropdownWrapper: { gap: 6 },
+  dropdownButton: {
+    minHeight: 54,
+    backgroundColor: C.surfaceDark,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    borderRadius: 13,
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  dropdownButtonText: { color: C.white, fontSize: 15, flex: 1 },
+  dropdownChevron: { color: C.gold, fontSize: 24, paddingLeft: 8 },
+  dropdownList: {
+    maxHeight: 205,
+    backgroundColor: C.surfaceDark,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+  },
+  dropdownOption: {
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    borderBottomWidth: 0.5,
+    borderBottomColor: C.border,
+  },
+  dropdownOptionText: { color: C.white, fontSize: 14 },
+  customInput: {
+    minHeight: 54,
+    backgroundColor: C.surfaceDark,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    borderRadius: 13,
+    paddingHorizontal: 14,
+    color: C.white,
+    fontSize: 15,
+  },
+
   container: {
     flex: 1,
     backgroundColor: C.bg,

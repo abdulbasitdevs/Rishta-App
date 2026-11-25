@@ -114,8 +114,8 @@ export default function DashboardScreen() {
   const [authenticated, setAuthenticated] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
-  const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("Member");
+  const [profileComplete, setProfileComplete] = useState(false);
 
   const [error, setError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -153,8 +153,53 @@ export default function DashboardScreen() {
             : "";
 
         setFullName(savedName || "Member");
-        setEmail(user.email ?? "");
         setAuthenticated(true);
+
+        // Read existing profile without changing any saved profile data.
+        // Supports the common user_id key, with id fallback for schemas using auth UID as PK.
+        let { data: savedProfile, error: profileError } = await supabase
+          .from("rishta_profiles")
+          .select("*")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (
+          profileError?.code === "42703" ||
+          profileError?.code === "PGRST204"
+        ) {
+          const fallback = await supabase
+            .from("rishta_profiles")
+            .select("*")
+            .eq("id", user.id)
+            .maybeSingle();
+          savedProfile = fallback.data;
+          profileError = fallback.error;
+        }
+        if (active && !profileError && savedProfile) {
+          const profile = savedProfile as Record<string, unknown>;
+          const explicitStatus =
+            profile.profile_completed ??
+            profile.is_profile_complete ??
+            profile.is_complete ??
+            profile.onboarding_completed;
+          const basicProfileReady =
+            Boolean(profile.gender) &&
+            Boolean(
+              profile.date_of_birth ?? profile.dob ?? profile.birth_date,
+            ) &&
+            Boolean(profile.marital_status) &&
+            Boolean(profile.city ?? profile.current_city ?? profile.location) &&
+            Boolean(
+              profile.education ??
+              profile.education_level ??
+              profile.qualification,
+            ) &&
+            Boolean(profile.profession ?? profile.occupation);
+          setProfileComplete(
+            typeof explicitStatus === "boolean"
+              ? explicitStatus
+              : basicProfileReady,
+          );
+        }
         setError("");
       } catch {
         if (active) {
@@ -369,37 +414,6 @@ export default function DashboardScreen() {
             </View>
           </View>
 
-          {/* Profile setup card */}
-          <View style={styles.profileCard}>
-            <View style={styles.profileCardTop}>
-              <View style={styles.profileCardIcon}>
-                <Text style={styles.profileIconText}>♡</Text>
-              </View>
-
-              <View style={styles.profileCardText}>
-                <Text style={styles.profileCardTitle}>
-                  Complete Your Profile
-                </Text>
-
-                <Text style={styles.profileCardDescription}>
-                  Tell us about yourself and your preferences to help others get
-                  to know you.
-                </Text>
-              </View>
-            </View>
-
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.push("/profile-setup")}
-              style={({ pressed }) => [
-                styles.profileButton,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text style={styles.profileButtonText}>Set Up My Profile →</Text>
-            </Pressable>
-          </View>
-
           {/* Quick Actions */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Quick Access</Text>
@@ -438,106 +452,50 @@ export default function DashboardScreen() {
             />
           </View>
 
-          {/* Discover section */}
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Find Your Perfect Rishta</Text>
-          </View>
+          {/* Profile setup card */}
+          <View style={styles.profileCard}>
+            <View style={styles.profileCardTop}>
+              <View style={styles.profileCardIcon}>
+                <Text style={styles.profileIconText}>♡</Text>
+              </View>
 
-          <View style={styles.discoverCard}>
-            <View style={styles.discoverIconCircle}>
-              <Text style={styles.discoverIcon}>♡</Text>
-            </View>
+              <View style={styles.profileCardText}>
+                <Text style={styles.profileCardTitle}>
+                  {profileComplete
+                    ? "Your Profile Is Complete"
+                    : "Complete Your Profile"}
+                </Text>
 
-            <Text style={styles.discoverTitle}>
-              A Meaningful Connection Awaits
-            </Text>
-
-            <Text style={styles.discoverDescription}>
-              Explore member profiles, learn about shared values and send an
-              invitation when someone feels right for you.
-            </Text>
-
-            <View style={styles.discoverDivider}>
-              <View style={styles.discoverLine} />
-              <Text style={styles.discoverHeart}>✧</Text>
-              <View style={styles.discoverLine} />
+                <Text style={styles.profileCardDescription}>
+                  {profileComplete
+                    ? "Your profile is ready. Keep your details up to date."
+                    : "Tell us about yourself and your preferences to help others get to know you."}
+                </Text>
+              </View>
             </View>
 
             <Pressable
               accessibilityRole="button"
-              onPress={() => router.push("/browse-profiles")}
+              onPress={() => router.push("/profile-setup")}
               style={({ pressed }) => [
-                styles.primaryButton,
+                styles.profileButton,
                 pressed && styles.pressed,
               ]}
             >
-              <Text style={styles.primaryButtonText}>Explore Profiles →</Text>
+              <Text style={styles.profileButtonText}>
+                {profileComplete
+                  ? "Edit Your Profile →"
+                  : "Set Up My Profile →"}
+              </Text>
             </Pressable>
           </View>
 
-          {/* Account information */}
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Your Account</Text>
-          </View>
-
-          <View style={styles.accountCard}>
-            <View style={styles.accountRow}>
-              <Text style={styles.accountLabel}>Full Name</Text>
-
-              <Text style={styles.accountValue}>{fullName}</Text>
-            </View>
-
-            <View style={styles.accountDivider} />
-
-            <View style={styles.accountRow}>
-              <Text style={styles.accountLabel}>Email Address</Text>
-
-              <Text style={styles.accountValue}>{email || "Not provided"}</Text>
-            </View>
-
-            <View style={styles.accountDivider} />
-
-            <View style={styles.accountRow}>
-              <Text style={styles.accountLabel}>Account Status</Text>
-
-              <Text style={styles.accountStatus}>✓ Signed In</Text>
-            </View>
-
-            <View style={styles.accountDivider} />
-
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.push("/change-password")}
-              style={styles.accountLink}
-            >
-              <Text style={styles.accountLinkText}>♢ Change Password</Text>
-
-              <Text style={styles.accountLinkArrow}>→</Text>
-            </Pressable>
-          </View>
-
-          {/* Logout */}
+          {/* Error message */}
           {error ? (
             <Text style={styles.errorText} accessibilityRole="alert">
               {error}
             </Text>
           ) : null}
-
-          <Pressable
-            accessibilityRole="button"
-            disabled={signingOut}
-            onPress={() => void handleLogout()}
-            style={({ pressed }) => [
-              styles.logoutButton,
-              (pressed || signingOut) && styles.pressed,
-            ]}
-          >
-            {signingOut ? (
-              <ActivityIndicator color={C.gold} />
-            ) : (
-              <Text style={styles.logoutButtonText}>Log Out</Text>
-            )}
-          </Pressable>
 
           <View style={styles.footer}>
             <Text style={styles.footerHeart}>♡</Text>
@@ -962,71 +920,6 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     textAlign: "center",
   },
-
-  // Discover section
-  discoverCard: {
-    backgroundColor: C.surface,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 23,
-    padding: 24,
-    alignItems: "center",
-    marginBottom: 31,
-    gap: 13,
-  },
-
-  discoverIconCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: "#12443A",
-    borderWidth: 1,
-    borderColor: C.gold,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  discoverIcon: {
-    color: C.goldLight,
-    fontSize: 51,
-    lineHeight: 60,
-  },
-
-  discoverTitle: {
-    color: C.white,
-    fontFamily: serif,
-    fontSize: 23,
-    fontWeight: "700",
-    textAlign: "center",
-    lineHeight: 31,
-  },
-
-  discoverDescription: {
-    color: C.muted,
-    fontSize: 14,
-    lineHeight: 23,
-    textAlign: "center",
-    maxWidth: 440,
-  },
-
-  discoverDivider: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginVertical: 5,
-  },
-
-  discoverLine: {
-    width: 60,
-    height: 1,
-    backgroundColor: C.gold,
-  },
-
-  discoverHeart: {
-    color: C.gold,
-    fontSize: 25,
-  },
-
   primaryButton: {
     width: "100%",
     minHeight: 57,
@@ -1045,81 +938,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     textAlign: "center",
   },
-
-  // Account details
-  accountCard: {
-    backgroundColor: C.surface,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 22,
-  },
-
-  accountRow: {
-    gap: 7,
-    paddingVertical: 5,
-  },
-
-  accountLabel: {
-    color: C.muted,
-    fontSize: 12,
-  },
-
-  accountValue: {
-    color: C.white,
-    fontSize: 15,
-    fontWeight: "600",
-  },
-
-  accountStatus: {
-    color: C.success,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-
-  accountDivider: {
-    height: 1,
-    backgroundColor: C.border,
-    opacity: 0.5,
-    marginVertical: 14,
-  },
-
-  accountLink: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 7,
-  },
-
-  accountLinkText: {
-    color: C.goldLight,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-
-  accountLinkArrow: {
-    color: C.gold,
-    fontSize: 23,
-  },
-
-  // Logout
-  logoutButton: {
-    width: "100%",
-    minHeight: 53,
-    borderWidth: 1.5,
-    borderColor: C.gold,
-    borderRadius: 30,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  logoutButtonText: {
-    color: C.goldLight,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-
   pressed: {
     opacity: 0.72,
   },
